@@ -87,9 +87,9 @@ export function createEventListenerWrapperWithPriority(
   domEventName: DOMEventName,
   eventSystemFlags: EventSystemFlags,
 ): Function {
-  const eventPriority = getEventPriority(domEventName);
-  let listenerWrapper;
-  switch (eventPriority) {
+  const eventPriority = getEventPriority(domEventName); // just a priority number
+  let listenerWrapper; // dispath different event with defferent priority
+  switch (eventPriority) { // discrete 分散的
     case DiscreteEventPriority:
       listenerWrapper = dispatchDiscreteEvent;
       break;

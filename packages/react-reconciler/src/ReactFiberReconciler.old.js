@@ -243,12 +243,12 @@ export function createContainer(
   concurrentUpdatesByDefaultOverride: null | boolean,
 ): OpaqueRoot {
   return createFiberRoot(
-    containerInfo,
-    tag,
-    hydrate,
-    hydrationCallbacks,
-    isStrictMode,
-    concurrentUpdatesByDefaultOverride,
+    containerInfo,  // dom element
+    tag,// 0
+    hydrate,// false
+    hydrationCallbacks, // null
+    isStrictMode, // false
+    concurrentUpdatesByDefaultOverride,  // false
   );
 }
 

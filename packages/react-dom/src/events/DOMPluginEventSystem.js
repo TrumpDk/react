@@ -342,10 +342,10 @@ export function listenToNativeEvent(
     eventSystemFlags |= IS_CAPTURE_PHASE;
   }
   addTrappedEventListener(
-    target,
-    domEventName,
-    eventSystemFlags,
-    isCapturePhaseListener,
+    target, // root element or owner element
+    domEventName, // dom event name such as click
+    eventSystemFlags, // just a flag
+    isCapturePhaseListener, // flag that means is capture pahse or not
   );
 }
 
@@ -411,12 +411,13 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
 }
 
 function addTrappedEventListener(
-  targetContainer: EventTarget,
-  domEventName: DOMEventName,
+  targetContainer: EventTarget,  // dom element container or owner container
+  domEventName: DOMEventName, // dom event name
   eventSystemFlags: EventSystemFlags,
-  isCapturePhaseListener: boolean,
+  isCapturePhaseListener: boolean, // capture pahse event flag
   isDeferredListenerForLegacyFBSupport?: boolean,
 ) {
+  // return a function with event priority level
   let listener = createEventListenerWrapperWithPriority(
     targetContainer,
     domEventName,

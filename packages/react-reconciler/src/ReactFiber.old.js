@@ -125,32 +125,32 @@ function FiberNode(
   this.stateNode = null;
 
   // Fiber
-  this.return = null;
-  this.child = null;
-  this.sibling = null;
+  this.return = null; // point to parent
+  this.child = null; // point to child
+  this.sibling = null; // point to siblings
   this.index = 0;
 
   this.ref = null;
 
   this.pendingProps = pendingProps;
-  this.memoizedProps = null;
-  this.updateQueue = null;
-  this.memoizedState = null;
-  this.dependencies = null;
+  this.memoizedProps = null; // old props
+  this.updateQueue = null; // update queue
+  this.memoizedState = null; // old state
+  this.dependencies = null; // 
 
   this.mode = mode;
 
   // Effects
   this.flags = NoFlags;
-  this.subtreeFlags = NoFlags;
+  this.subtreeFlags = NoFlags; // sub tree update flags
   this.deletions = null;
 
-  this.lanes = NoLanes;
+  this.lanes = NoLanes; // priority flag 
   this.childLanes = NoLanes;
 
-  this.alternate = null;
+  this.alternate = null; // new vnode chache
 
-  if (enableProfilerTimer) {
+  if (enableProfilerTimer) {  
     // Note: The following is done to avoid a v8 performance cliff.
     //
     // Initializing the fields below to smis and later updating them with

@@ -115,9 +115,9 @@ function legacyCreateRootFromDOMContainer(
   }
 
   const root = createContainer(
-    container,
-    LegacyRoot,
-    forceHydrate,
+    container, // dpm container
+    LegacyRoot,  // ==> 0
+    forceHydrate,  // false
     null, // hydrationCallbacks
     false, // isStrictMode
     false, // concurrentUpdatesByDefaultOverride,
@@ -145,11 +145,11 @@ function warnOnInvalidCallback(callback: mixed, callerName: string): void {
 }
 
 function legacyRenderSubtreeIntoContainer(
-  parentComponent: ?React$Component<any, any>,
-  children: ReactNodeList,
-  container: Container,
-  forceHydrate: boolean,
-  callback: ?Function,
+  parentComponent: ?React$Component<any, any>,   // => for first time is null
+  children: ReactNodeList,  //  <App>
+  container: Container,  // => document.getelement....
+  forceHydrate: boolean,  // false for none hydrate
+  callback: ?Function,  // if exist
 ) {
   if (__DEV__) {
     topLevelUpdateWarnings(container);
