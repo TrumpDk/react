@@ -241,14 +241,16 @@ export function createContainer(
   hydrationCallbacks: null | SuspenseHydrationCallbacks,
   isStrictMode: boolean,
   concurrentUpdatesByDefaultOverride: null | boolean,
+  identifierPrefix: string,
 ): OpaqueRoot {
   return createFiberRoot(
-    containerInfo,  // dom element
-    tag,// 0
-    hydrate,// false
-    hydrationCallbacks, // null
-    isStrictMode, // false
-    concurrentUpdatesByDefaultOverride,  // false
+    containerInfo,
+    tag,
+    hydrate,
+    hydrationCallbacks,
+    isStrictMode,
+    concurrentUpdatesByDefaultOverride,
+    identifierPrefix,
   );
 }
 
