@@ -458,6 +458,7 @@ export function scheduleUpdateOnFiber(
 ): FiberRoot | null {
   checkForNestedUpdates();
 
+  // give a lane priority to current fiber and find the fiberRoot for this fiber
   const root = markUpdateLaneFromFiberToRoot(fiber, lane);
   if (root === null) {
     return null;
@@ -570,6 +571,7 @@ function markUpdateLaneFromFiberToRoot(
 ): FiberRoot | null {
   // Update the source fiber's lanes
   sourceFiber.lanes = mergeLanes(sourceFiber.lanes, lane);
+  // if this fiber has a alternate get it and set a lane for it
   let alternate = sourceFiber.alternate;
   if (alternate !== null) {
     alternate.lanes = mergeLanes(alternate.lanes, lane);
@@ -585,6 +587,7 @@ function markUpdateLaneFromFiberToRoot(
   // Walk the parent path to the root and update the child lanes.
   let node = sourceFiber;
   let parent = sourceFiber.return;
+  // resurse the parent fiber and add lanes for parent and alternate until it is root fiber
   while (parent !== null) {
     parent.childLanes = mergeLanes(parent.childLanes, lane);
     alternate = parent.alternate;
@@ -597,10 +600,12 @@ function markUpdateLaneFromFiberToRoot(
         }
       }
     }
+    // this step is to get the root fiber
     node = parent;
     parent = parent.return;
   }
   if (node.tag === HostRoot) {
+    // get the FiberRoot and return
     const root: FiberRoot = node.stateNode;
     return root;
   } else {

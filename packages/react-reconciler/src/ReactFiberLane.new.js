@@ -566,6 +566,7 @@ export function markRootUpdated(
   updateLane: Lane,
   eventTime: number,
 ) {
+  // 将Pending lane换为update lane
   root.pendingLanes |= updateLane;
 
   // If there are any suspended transitions, it's possible this new update

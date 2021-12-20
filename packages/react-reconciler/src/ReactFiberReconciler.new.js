@@ -136,6 +136,7 @@ function getContextForSubtree(
   }
 
   const fiber = getInstance(parentComponent);
+  // get current fiber context provider
   const parentContext = findCurrentUnmaskedContext(fiber);
 
   if (fiber.tag === ClassComponent) {
@@ -295,6 +296,7 @@ export function updateContainer(
     }
   }
 
+  // create udpate linked list for example update.next -> next update
   const update = createUpdate(eventTime, lane);
   // Caution: React DevTools currently depends on this property
   // being called "element".
@@ -314,6 +316,7 @@ export function updateContainer(
     update.callback = callback;
   }
 
+  // enqueue update fiber into sharedQueue
   enqueueUpdate(current, update, lane);
   const root = scheduleUpdateOnFiber(current, lane, eventTime);
   if (root !== null) {
