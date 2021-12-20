@@ -243,10 +243,10 @@ export function enqueueUpdate<State>(
       update.next = update;
     } else {
       // create a closed circular list also
-      // pending a->b->c->d->a
+      // pending a->b->a
       // update enqueue e
-      // e->a->b->c->d->a
-      // e->a->b->c->d->e
+      // a->e b->a
+      // a->e->b->a
       update.next = pending.next;
       pending.next = update;
     }
