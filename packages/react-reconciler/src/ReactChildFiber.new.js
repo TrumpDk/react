@@ -1363,8 +1363,8 @@ function ChildReconciler(shouldTrackSideEffects) {
   return reconcileChildFibers;
 }
 
-export const reconcileChildFibers = ChildReconciler(true);
-export const mountChildFibers = ChildReconciler(false);
+export const reconcileChildFibers = ChildReconciler(true); // ChildReconciler传入的参数决定是否需要增加一些
+export const mountChildFibers = ChildReconciler(false);    // effectTag，此目的主要是用来优化初次渲染
 
 export function cloneChildFibers(
   current: Fiber | null,

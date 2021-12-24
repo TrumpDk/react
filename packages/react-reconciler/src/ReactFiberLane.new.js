@@ -29,7 +29,7 @@ import {clz32} from './clz32';
 // If those values are changed that package should be rebuilt and redeployed.
 
 export const TotalLanes = 31;
-
+// no lane here means there is no job enqueue for this moment
 export const NoLanes: Lanes = /*                        */ 0b0000000000000000000000000000000;
 export const NoLane: Lane = /*                          */ 0b0000000000000000000000000000000;
 
@@ -184,6 +184,7 @@ function getHighestPriorityLanes(lanes: Lanes | Lane): Lanes {
 
 export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
   // Early bailout if there's no pending work left.
+  // 取出pendingLanes
   const pendingLanes = root.pendingLanes;
   if (pendingLanes === NoLanes) {
     return NoLanes;
@@ -191,29 +192,40 @@ export function getNextLanes(root: FiberRoot, wipLanes: Lanes): Lanes {
 
   let nextLanes = NoLanes;
 
+  // 取出suspenseLanes
   const suspendedLanes = root.suspendedLanes;
+  // 取出pingedLans
   const pingedLanes = root.pingedLanes;
 
   // Do not work on any idle work until all the non-idle work has finished,
   // even if the work is suspended.
+  // 过滤掉除了NoIdleLanes的其他lane 比如 OffScreenLane IdleLane IdleHydrationLane
+  // 先取出pendingLanes中的任务
   const nonIdlePendingLanes = pendingLanes & NonIdleLanes;
   if (nonIdlePendingLanes !== NoLanes) {
+    // 去除suspenseLanes，取pendingLanes中非挂起任务
     const nonIdleUnblockedLanes = nonIdlePendingLanes & ~suspendedLanes;
     if (nonIdleUnblockedLanes !== NoLanes) {
+      // 取出所有优先级最高的lanes
       nextLanes = getHighestPriorityLanes(nonIdleUnblockedLanes);
     } else {
+      // 取出所有pingedLanes
       const nonIdlePingedLanes = nonIdlePendingLanes & pingedLanes;
       if (nonIdlePingedLanes !== NoLanes) {
+        // 拿到pingedLanes中优先级最高
         nextLanes = getHighestPriorityLanes(nonIdlePingedLanes);
       }
     }
   } else {
     // The only remaining work is Idle.
+    // 取除了suspended的inle任务，这情况下NoneIdle任务应该都执行完了
     const unblockedLanes = pendingLanes & ~suspendedLanes;
     if (unblockedLanes !== NoLanes) {
+      // 非pinged优先
       nextLanes = getHighestPriorityLanes(unblockedLanes);
     } else {
       if (pingedLanes !== NoLanes) {
+        // pinged
         nextLanes = getHighestPriorityLanes(pingedLanes);
       }
     }
@@ -392,24 +404,31 @@ export function markStarvedLanesAsExpired(
   // the earliest expiration time on the root. Then use that to quickly bail out
   // of this function.
 
+
+  // lanes of the jobs of which pending by other jobs
   const pendingLanes = root.pendingLanes;
+  // related to suspence
   const suspendedLanes = root.suspendedLanes;
+  // suspence job recover lane
   const pingedLanes = root.pingedLanes;
+  // get the job's expiration times
   const expirationTimes = root.expirationTimes;
 
   // Iterate through the pending lanes and check if we've reached their
   // expiration time. If so, we'll assume the update is being starved and mark
   // it as expired to force it to finish.
-  let lanes = pendingLanes;
-  while (lanes > 0) {
+  let lanes = pendingLanes;  // 0000 0000 0000 1100
+  while (lanes > 0) { // 4
+    // 待我验证此处逻辑
     const index = pickArbitraryLaneIndex(lanes);
-    const lane = 1 << index;
+    const lane = 1 << index; // lane -> 0000 0000 0000 1000
 
-    const expirationTime = expirationTimes[index];
+    const expirationTime = expirationTimes[index]; // take this expiration time out whose index is 12
     if (expirationTime === NoTimestamp) {
       // Found a pending lane with no expiration time. If it's not suspended, or
       // if it's pinged, assume it's CPU-bound. Compute a new expiration time
       // using the current time.
+      // 如果没有suspence相关任务或者当前任务是挂起的 重新当前计算过期时间
       if (
         (lane & suspendedLanes) === NoLanes ||
         (lane & pingedLanes) !== NoLanes
@@ -417,6 +436,7 @@ export function markStarvedLanesAsExpired(
         // Assumes timestamps are monotonically increasing.
         expirationTimes[index] = computeExpirationTime(lane, currentTime);
       }
+      // 如果已经超过过期时间，将当前任务优先级设置为过期
     } else if (expirationTime <= currentTime) {
       // This lane expired
       root.expiredLanes |= lane;
@@ -590,6 +610,8 @@ export function markRootUpdated(
   const index = laneToIndex(updateLane);
   // We can always overwrite an existing timestamp because we prefer the most
   // recent event, and we assume time is monotonically increasing.
+  // create a event time array, that the item of it contains a time
+  // here each lane has a eventTime, the index here belongs to its lane
   eventTimes[index] = eventTime;
 }
 
@@ -746,7 +768,7 @@ export function getBumpedLaneForHydration(
 export function addFiberToLanesMap(
   root: FiberRoot,
   fiber: Fiber,
-  lanes: Lanes | Lane,
+  lanes: Lanes | Lane, // workInProgressLane
 ) {
   if (!enableUpdaterTracking) {
     return;
@@ -759,9 +781,12 @@ export function addFiberToLanesMap(
     const index = laneToIndex(lanes);
     const lane = 1 << index;
 
+    // pendingUpdateLaneMap添加
+    // 将之前pending的任务放到当前fiber pending map来进行更新
+    // 这里的逻辑还需要结合上下文再多看看
     const updaters = pendingUpdatersLaneMap[index];
     updaters.add(fiber);
-
+    // 删除当前车道
     lanes &= ~lane;
   }
 }
@@ -773,23 +798,30 @@ export function movePendingFibersToMemoized(root: FiberRoot, lanes: Lanes) {
   if (!isDevToolsPresent) {
     return;
   }
+  // pending lanes map
   const pendingUpdatersLaneMap = root.pendingUpdatersLaneMap;
+  // 内存中的 updater
   const memoizedUpdaters = root.memoizedUpdaters;
+  // 遍历车道 取出任务
   while (lanes > 0) {
     const index = laneToIndex(lanes);
     const lane = 1 << index;
+
 
     const updaters = pendingUpdatersLaneMap[index];
     if (updaters.size > 0) {
       updaters.forEach(fiber => {
         const alternate = fiber.alternate;
+        // 没有创建过alternate或者之前并没有推入过alternate 才推入内存队列
         if (alternate === null || !memoizedUpdaters.has(alternate)) {
           memoizedUpdaters.add(fiber);
         }
       });
+      // 操作完应该清空map
       updaters.clear();
     }
 
+    // 删除当前lane
     lanes &= ~lane;
   }
 }

@@ -280,17 +280,20 @@ export function reconcileChildren(
   nextChildren: any,
   renderLanes: Lanes,
 ) {
+  // current为空说明当前是初次渲染，不为空则说明是更新
   if (current === null) {
     // If this is a fresh new component that hasn't been rendered yet, we
     // won't update its child set by applying minimal side-effects. Instead,
     // we will add them all to the child before it gets rendered. That means
     // we can optimize this reconciliation pass by not tracking side-effects.
+    // 当前节点为空则构建 mountchildren fiber
     workInProgress.child = mountChildFibers(
       workInProgress,
-      null,
+      null, // 
       nextChildren,
       renderLanes,
     );
+    // 当前节点不为空 说明当前发生了更新 需要构建 reconcileChild fiber 不会调用diff算法
   } else {
     // If the current child is the same as the work in progress, it means that
     // we haven't yet started any work on these children. Therefore, we use
@@ -298,6 +301,7 @@ export function reconcileChildren(
 
     // If we had any progressed work already, that is invalid at this point so
     // let's throw it out.
+    // 会调用diff算法
     workInProgress.child = reconcileChildFibers(
       workInProgress,
       current.child,
@@ -3645,7 +3649,9 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
   }
   return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
 }
-
+// workInprogress.alternate == current
+// 初次渲染应该两个都一样的
+// 更新就会不同
 function beginWork(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -3668,13 +3674,15 @@ function beginWork(
       );
     }
   }
-
   if (current !== null) {
+    // 二者取的位置不一样
     const oldProps = current.memoizedProps;
     const newProps = workInProgress.pendingProps;
 
     if (
+      // 新老Props不一样说明存在更新
       oldProps !== newProps ||
+      // 存在老的context并且发生了变化
       hasLegacyContextChanged() ||
       // Force a re-render if the implementation changed due to hot reload:
       (__DEV__ ? workInProgress.type !== current.type : false)
@@ -3685,6 +3693,7 @@ function beginWork(
     } else {
       // Neither props nor legacy context changes. Check if there's a pending
       // update or context change.
+      // 二者都没变化 检查下是否有pending update或者cotext变化
       const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
         current,
         renderLanes,
@@ -3697,6 +3706,7 @@ function beginWork(
       ) {
         // No pending updates or context. Bail out now.
         didReceiveUpdate = false;
+        // 没有变化则复用当前节点
         return attemptEarlyBailoutIfNoScheduledUpdate(
           current,
           workInProgress,
@@ -3741,8 +3751,10 @@ function beginWork(
   // move this assignment out of the common path and into each branch.
   workInProgress.lanes = NoLanes;
 
+  // 根具不同的tag决定是挂载、更新组件
   switch (workInProgress.tag) {
     case IndeterminateComponent: {
+      // 只有在第一次渲染的情况下才会出现IndeterminateComponent
       return mountIndeterminateComponent(
         current,
         workInProgress,
