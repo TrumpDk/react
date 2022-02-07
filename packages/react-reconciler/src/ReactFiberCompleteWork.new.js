@@ -29,7 +29,10 @@ import type {
 import type {SuspenseContext} from './ReactFiberSuspenseContext.new';
 import type {OffscreenState} from './ReactFiberOffscreenComponent';
 import type {Cache, SpawnedCachePool} from './ReactFiberCacheComponent.new';
-import {enableSuspenseAvoidThisFallback} from 'shared/ReactFeatureFlags';
+import {
+  enableClientRenderFallbackOnHydrationMismatch,
+  enableSuspenseAvoidThisFallback,
+} from 'shared/ReactFeatureFlags';
 
 import {resetWorkInProgressVersions as resetMutableSourceWorkInProgressVersions} from './ReactMutableSource.new';
 
@@ -74,6 +77,9 @@ import {
   StaticMask,
   MutationMask,
   Passive,
+  Incomplete,
+  ShouldCapture,
+  ForceClientRender,
 } from './ReactFiberFlags';
 
 import {
@@ -120,9 +126,12 @@ import {
   prepareToHydrateHostInstance,
   prepareToHydrateHostTextInstance,
   prepareToHydrateHostSuspenseInstance,
+  warnIfUnhydratedTailNodes,
   popHydrationState,
   resetHydrationState,
   getIsHydrating,
+  hasUnhydratedTailNodes,
+  upgradeHydrationErrorsToRecoverable,
 } from './ReactFiberHydrationContext.new';
 import {
   enableSuspenseCallback,
@@ -1028,6 +1037,18 @@ function completeWork(
       const nextState: null | SuspenseState = workInProgress.memoizedState;
 
       if (enableSuspenseServerRenderer) {
+        if (
+          enableClientRenderFallbackOnHydrationMismatch &&
+          hasUnhydratedTailNodes() &&
+          (workInProgress.mode & ConcurrentMode) !== NoMode &&
+          (workInProgress.flags & DidCapture) === NoFlags
+        ) {
+          warnIfUnhydratedTailNodes(workInProgress);
+          resetHydrationState();
+          workInProgress.flags |=
+            ForceClientRender | Incomplete | ShouldCapture;
+          return workInProgress;
+        }
         if (nextState !== null && nextState.dehydrated !== null) {
           // We might be inside a hydration state the first time we're picking up this
           // Suspense boundary, and also after we've reentered it for further hydration.
@@ -1086,6 +1107,12 @@ function completeWork(
             return null;
           }
         }
+
+        // Successfully completed this tree. If this was a forced client render,
+        // there may have been recoverable errors during first hydration
+        // attempt. If so, add them to a queue so we can log them in the
+        // commit phase.
+        upgradeHydrationErrorsToRecoverable();
       }
 
       if ((workInProgress.flags & DidCapture) !== NoFlags) {
