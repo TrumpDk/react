@@ -277,7 +277,7 @@ if (__DEV__) {
 export function reconcileChildren(
   current: Fiber | null,
   workInProgress: Fiber,
-  nextChildren: any,
+  nextChildren: any, // 新fiber child
   renderLanes: Lanes,
 ) {
   // current为空说明当前是初次渲染，不为空则说明是更新
@@ -1326,6 +1326,7 @@ function updateHostRoot(current, workInProgress, renderLanes) {
 
   // Caution: React DevTools currently depends on this property
   // being called "element".
+  // 新的vdom对应的新fiber的children
   const nextChildren = nextState.element;
   if (nextChildren === prevChildren) {
     resetHydrationState();
@@ -1390,13 +1391,19 @@ function updateHostComponent(
     tryToClaimNextHydratableInstance(workInProgress);
   }
 
+  // 获取workInProgress类型
   const type = workInProgress.type;
+  // 获取更新的props
   const nextProps = workInProgress.pendingProps;
+  // 获取老props
   const prevProps = current !== null ? current.memoizedProps : null;
 
+  // 获取nextChildren
   let nextChildren = nextProps.children;
+  // 如果props.children是字符串或者文本 只需要更新文本 不需要额外创建fiber节点
   const isDirectTextChild = shouldSetTextContent(type, nextProps);
 
+  // 如果当前子节点是文本节点则不另外单独创建fiber对象直接清空 当作节点元素处理即可
   if (isDirectTextChild) {
     // We special case a direct text child of a host node. This is a common
     // case. We won't handle it as a reified child. We will instead handle

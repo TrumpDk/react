@@ -306,8 +306,10 @@ function unstable_wrapCallback(callback) {
 }
 
 function unstable_scheduleCallback(priorityLevel, callback, options) {
+  // 获取当前时间
   var currentTime = getCurrentTime();
 
+  // 如果有传入options，则根据相应类型取出其中延迟时间加到startTime上头
   var startTime;
   if (typeof options === 'object' && options !== null) {
     var delay = options.delay;
@@ -320,6 +322,7 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
     startTime = currentTime;
   }
 
+  // timeout时间是根据传入的priority level决定的 有五种priority
   var timeout;
   switch (priorityLevel) {
     case ImmediatePriority:
@@ -340,6 +343,7 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
       break;
   }
 
+  // 计算最终的过期时间
   var expirationTime = startTime + timeout;
 
   var newTask = {
@@ -354,6 +358,7 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
     newTask.isQueued = false;
   }
 
+  // 有延迟的任务
   if (startTime > currentTime) {
     // This is a delayed task.
     newTask.sortIndex = startTime;
@@ -369,6 +374,7 @@ function unstable_scheduleCallback(priorityLevel, callback, options) {
       // Schedule a timeout.
       requestHostTimeout(handleTimeout, startTime - currentTime);
     }
+    // 不需要延迟的任务
   } else {
     newTask.sortIndex = expirationTime;
     push(taskQueue, newTask);

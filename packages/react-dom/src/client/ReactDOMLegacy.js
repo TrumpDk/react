@@ -115,7 +115,7 @@ function legacyCreateRootFromDOMContainer(
   }
 
   const root = createContainer(
-    container, // dpm container
+    container, // dom container
     LegacyRoot,  // ==> 0
     forceHydrate,  // false
     null, // hydrationCallbacks

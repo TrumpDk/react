@@ -214,6 +214,7 @@ if (supportsMutation) {
     let node = workInProgress.child;
     while (node !== null) {
       if (node.tag === HostComponent || node.tag === HostText) {
+        // 将真实dom节点挂载到父节点上面
         appendInitialChild(parent, node.stateNode);
       } else if (node.tag === HostPortal) {
         // If we have a portal child, then we don't want to traverse
@@ -227,6 +228,7 @@ if (supportsMutation) {
       if (node === workInProgress) {
         return;
       }
+      // 处理多层级情况
       while (node.sibling === null) {
         if (node.return === null || node.return === workInProgress) {
           return;
@@ -898,6 +900,7 @@ function completeWork(
       const rootContainerInstance = getRootHostContainer();
       const type = workInProgress.type;
       if (current !== null && workInProgress.stateNode != null) {
+        // 更新dom节点
         updateHostComponent(
           current,
           workInProgress,
@@ -944,6 +947,7 @@ function completeWork(
             markUpdate(workInProgress);
           }
         } else {
+          // 创建真实dom节点
           const instance = createInstance(
             type,
             newProps,
@@ -952,14 +956,17 @@ function completeWork(
             workInProgress,
           );
 
+          // 初次渲染的时候将真实dom节点挂载到父结点上
           appendAllChildren(instance, workInProgress, false, false);
 
+          // 将真实DOM添加到stateNode上面
           workInProgress.stateNode = instance;
 
           // Certain renderers require commit-time effects for initial mount.
           // (eg DOM renderer supports auto-focus for certain elements).
           // Make sure such renderers get scheduled for later work.
           if (
+            // 给真实DOM添加属性
             finalizeInitialChildren(
               instance,
               type,

@@ -291,13 +291,16 @@ function setInitialDOMProperties(
           Object.freeze(nextProp);
         }
       }
+      // props key 是style 给
       // Relies on `updateStylesByID` not mutating `styleUpdates`.
       setValueForStyles(domElement, nextProp);
     } else if (propKey === DANGEROUSLY_SET_INNER_HTML) {
       const nextHtml = nextProp ? nextProp[HTML] : undefined;
       if (nextHtml != null) {
+        // 设置innerHtml
         setInnerHTML(domElement, nextHtml);
       }
+      // 设置children
     } else if (propKey === CHILDREN) {
       if (typeof nextProp === 'string') {
         // Avoid setting initial textContent when the text is empty. In IE11 setting

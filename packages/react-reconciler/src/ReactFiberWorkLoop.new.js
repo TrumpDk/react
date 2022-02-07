@@ -717,11 +717,12 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
       // push task into the synQueue
       // deal legacy and sync mode task which is under blocking mode
       scheduleLegacySyncCallback(performSyncWorkOnRoot.bind(null, root));
+      // 非legacy模式处理逻辑
     } else {
       // deal the task which is only in sync mode
       scheduleSyncCallback(performSyncWorkOnRoot.bind(null, root));
     }
-    // 非legacy模式下 支持微任务走微任务
+    // 支持微任务走微任务
     if (supportsMicrotasks) {
       // Flush the queue in a microtask.
       if (__DEV__ && ReactCurrentActQueue.current !== null) {
@@ -1169,10 +1170,12 @@ function performSyncWorkOnRoot(root) {
   // We now have a consistent tree. Because this is a sync render, we
   // will commit it even if something suspended.
   // alternate属性已经渲染了 就等后面替换了
+  // 同步模式下 就算有挂起的任务也要先渲染这棵树
   const finishedWork: Fiber = (root.current.alternate: any);
   root.finishedWork = finishedWork;
   root.finishedLanes = lanes;
   // commit phase commit阶段
+  // fiber树构建完毕 开始提交更新
   commitRoot(root);
 
   // Before exiting, make sure there's a callback scheduled for the next
@@ -1571,6 +1574,7 @@ function renderRootSync(root: FiberRoot, lanes: Lanes) {
     }
 
     // 准备新的栈
+    // 创建新的 workinprogress 树 用来进行diff操作
     prepareFreshStack(root, lanes);
   }
 
@@ -1584,8 +1588,10 @@ function renderRootSync(root: FiberRoot, lanes: Lanes) {
     markRenderStarted(lanes);
   }
 
+  // 构建fiber树
   do {
     try {
+      // 本质上是为了构建effect list链表
       workLoopSync();
       break;
     } catch (thrownValue) {
@@ -1627,6 +1633,7 @@ function renderRootSync(root: FiberRoot, lanes: Lanes) {
 function workLoopSync() {
   // Already timed out, so perform work without checking if we need to yield.
   // 处理事件直到没有事件为止
+  // workinprogress为空跳出循环
   while (workInProgress !== null) {
     performUnitOfWork(workInProgress);
   }
@@ -1720,7 +1727,7 @@ function workLoopConcurrent() {
     performUnitOfWork(workInProgress);
   }
 }
-
+//                         workInProgressFiber  -> 将要处理的fiber
 function performUnitOfWork(unitOfWork: Fiber): void {
   // The current, flushed, state of this fiber is the alternate. Ideally
   // nothing should rely on this, but relying on it here means that we don't
@@ -1732,7 +1739,7 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   let next;
   if (enableProfilerTimer && (unitOfWork.mode & ProfileMode) !== NoMode) {
     startProfilerTimer(unitOfWork);
-    // 处理beginWork节点
+    // 处理beginWork子节点
     next = beginWork(current, unitOfWork, subtreeRenderLanes);
     stopProfilerTimerIfRunningAndRecordDelta(unitOfWork, true);
   } else {
@@ -1740,6 +1747,7 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   }
 
   resetCurrentDebugFiberInDEV();
+  // 将新的Props挂载到老的memorizedPropos上面
   unitOfWork.memoizedProps = unitOfWork.pendingProps;
   // 当前任务没有递归完毕则继续递归，递归完毕则完成当前阶段递归任务
   if (next === null) {
@@ -1831,15 +1839,18 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
       }
     }
 
+    // 整个流程是自顶向下 深度优先遍历 遍历完当前节点 还会便利兄弟节点
     const siblingFiber = completedWork.sibling;
     if (siblingFiber !== null) {
       // If there is more work to do in this returnFiber, do that next.
       workInProgress = siblingFiber;
       return;
     }
+    // 指向父节点 说明父节点也完成了工作
     // Otherwise, return to the parent
     completedWork = returnFiber;
     // Update the next thing we're working on in case something throws.
+    // workInProgress置为null时会退出workloop
     workInProgress = completedWork;
   } while (completedWork !== null);
 
@@ -1867,6 +1878,7 @@ function commitRoot(root) {
 }
 
 function commitRootImpl(root, renderPriorityLevel) {
+  // 有passiveeffects就不断flush直到没有为止
   do {
     // `flushPassiveEffects` will call `flushSyncUpdateQueue` at the end, which
     // means `flushPassiveEffects` will sometimes result in additional
@@ -1882,6 +1894,7 @@ function commitRootImpl(root, renderPriorityLevel) {
     throw new Error('Should not already be working.');
   }
 
+  // 取出任务
   const finishedWork = root.finishedWork;
   const lanes = root.finishedLanes;
 
@@ -1891,6 +1904,7 @@ function commitRootImpl(root, renderPriorityLevel) {
     }
   }
 
+  // 目测一些性能统计的阶段吧
   if (enableSchedulingProfiler) {
     markCommitStarted(lanes);
   }
@@ -1917,7 +1931,9 @@ function commitRootImpl(root, renderPriorityLevel) {
       }
     }
   }
+  // 用完重置原则
   root.finishedWork = null;
+  // 用完就重置
   root.finishedLanes = NoLanes;
 
   if (finishedWork === root.current) {
@@ -1937,6 +1953,7 @@ function commitRootImpl(root, renderPriorityLevel) {
   let remainingLanes = mergeLanes(finishedWork.lanes, finishedWork.childLanes);
   markRootFinished(root, remainingLanes);
 
+  // 重置全局变量
   if (root === workInProgressRoot) {
     // We can reset these now that they are finished.
     workInProgressRoot = null;
@@ -1957,9 +1974,13 @@ function commitRootImpl(root, renderPriorityLevel) {
     (finishedWork.subtreeFlags & PassiveMask) !== NoFlags ||
     (finishedWork.flags & PassiveMask) !== NoFlags
   ) {
+    // 这里把本来在老版本代码commitBeforeMutationEffectOnFiber方法里面的代码挪到了前面来
+    // 这里调用useEffect钩子
     if (!rootDoesHavePassiveEffects) {
       rootDoesHavePassiveEffects = true;
       pendingPassiveEffectsRemainingLanes = remainingLanes;
+      // scheduleCallback是用来以某个优先级调用函数的嵌套方法
+      // 这里是以NormalSchedulerPriority调用flush
       scheduleCallback(NormalSchedulerPriority, () => {
         flushPassiveEffects();
         // This render triggered passive effects: release the root cache pool
@@ -1975,6 +1996,7 @@ function commitRootImpl(root, renderPriorityLevel) {
   // to check for the existence of `firstEffect` to satisfy Flow. I think the
   // only other reason this optimization exists is because it affects profiling.
   // Reconsider whether this is necessary.
+  // 不知道此处逻辑干嘛的
   const subtreeHasEffects =
     (finishedWork.subtreeFlags &
       (BeforeMutationMask | MutationMask | LayoutMask | PassiveMask)) !==
@@ -1984,13 +2006,18 @@ function commitRootImpl(root, renderPriorityLevel) {
       (BeforeMutationMask | MutationMask | LayoutMask | PassiveMask)) !==
     NoFlags;
 
+  // 搞不懂怎么来的
+  // effects列表不为空就不断刷新effects
   if (subtreeHasEffects || rootHasEffect) {
     const prevTransition = ReactCurrentBatchConfig.transition;
     ReactCurrentBatchConfig.transition = 0;
+    // 先保存之前优先级
     const previousPriority = getCurrentUpdatePriority();
+    // 设置成离散事件优先级
     setCurrentUpdatePriority(DiscreteEventPriority);
 
     const prevExecutionContext = executionContext;
+    // 将上下文节点标记为commitContext,作为commit阶段标志
     executionContext |= CommitContext;
 
     // Reset this to null before calling lifecycles
@@ -2003,6 +2030,10 @@ function commitRootImpl(root, renderPriorityLevel) {
     // The first phase a "before mutation" phase. We use this phase to read the
     // state of the host tree right before we mutate it. This is where
     // getSnapshotBeforeUpdate is called.
+
+    // before mutation阶段
+    // 相当于采用DFS对每个节点进行遍历 进行一些处理
+    // 还有待观望
     const shouldFireAfterActiveInstanceBlur = commitBeforeMutationEffects(
       root,
       finishedWork,
@@ -2020,7 +2051,11 @@ function commitRootImpl(root, renderPriorityLevel) {
       rootCommittingMutationOrLayoutEffects = root;
     }
 
+    // 提交effects list链 以便更新整个tree
+    // 重中之重 非常重要 most important 下来花点时间多看看
     // The next phase is the mutation phase, where we mutate the host tree.
+    // mutation阶段会更新真实DOM 这个阶段怎么收集effects 还没搞懂 毕竟effect list都已经重构了
+    // 目前看到的就是DFS遍历处理的节点
     commitMutationEffects(root, finishedWork, lanes);
 
     if (enableCreateEventHandleAPI) {
@@ -2047,6 +2082,7 @@ function commitRootImpl(root, renderPriorityLevel) {
     if (enableSchedulingProfiler) {
       markLayoutEffectsStarted(lanes);
     }
+    // layout阶段
     commitLayoutEffects(finishedWork, root, lanes);
     if (__DEV__) {
       if (enableDebugTracing) {
@@ -2064,6 +2100,7 @@ function commitRootImpl(root, renderPriorityLevel) {
 
     // Tell Scheduler to yield at the end of the frame, so the browser has an
     // opportunity to paint.
+    // 通知浏览器绘制UI
     requestPaint();
 
     executionContext = prevExecutionContext;
@@ -2219,6 +2256,9 @@ export function flushPassiveEffects(): boolean {
   if (rootWithPendingPassiveEffects !== null) {
     // Cache the root since rootWithPendingPassiveEffects is cleared in
     // flushPassiveEffectsImpl
+
+    // 拿到rootWithPendingPassiveEffects
+    
     const root = rootWithPendingPassiveEffects;
     // Cache and clear the remaining lanes flag; it must be reset since this
     // method can be called from various places, not always from commitRoot

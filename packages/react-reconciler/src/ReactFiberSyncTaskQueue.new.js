@@ -32,6 +32,7 @@ export function scheduleSyncCallback(callback: SchedulerCallback) {
   }
 }
 
+// 将更新的callback推入到syncQueue同步队列当中过去
 export function scheduleLegacySyncCallback(callback: SchedulerCallback) {
   includesLegacySyncCallbacks = true;
   scheduleSyncCallback(callback);
