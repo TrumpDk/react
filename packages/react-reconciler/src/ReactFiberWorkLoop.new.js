@@ -2089,6 +2089,7 @@ function commitRootImpl(
     // The next phase is the mutation phase, where we mutate the host tree.
     // mutation阶段会更新真实DOM 这个阶段怎么收集effects 还没搞懂 毕竟effect list都已经重构了
     // 目前看到的就是DFS遍历处理的节点
+    // updateQueue是在这个阶段处理的
     commitMutationEffects(root, finishedWork, lanes);
 
     if (enableCreateEventHandleAPI) {
