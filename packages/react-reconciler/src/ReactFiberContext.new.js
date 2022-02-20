@@ -290,6 +290,7 @@ function invalidateContextProvider(
 }
 
 function findCurrentUnmaskedContext(fiber: Fiber): Object {
+  // if disabled then return
   if (disableLegacyContext) {
     return emptyContextObject;
   } else {
@@ -303,18 +304,21 @@ function findCurrentUnmaskedContext(fiber: Fiber): Object {
     }
 
     let node = fiber;
+    // loop until get the right context provider component
     do {
       switch (node.tag) {
         case HostRoot:
           return node.stateNode.context;
         case ClassComponent: {
           const Component = node.type;
+          // if current component is context provider then return it
           if (isContextProvider(Component)) {
             return node.stateNode.__reactInternalMemoizedMergedChildContext;
           }
           break;
         }
       }
+      // if currrent component is not a context provider then go to its father
       node = node.return;
     } while (node !== null);
 

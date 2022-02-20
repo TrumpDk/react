@@ -29,7 +29,10 @@ import type {
 import type {SuspenseContext} from './ReactFiberSuspenseContext.new';
 import type {OffscreenState} from './ReactFiberOffscreenComponent';
 import type {Cache, SpawnedCachePool} from './ReactFiberCacheComponent.new';
-import {enableSuspenseAvoidThisFallback} from 'shared/ReactFeatureFlags';
+import {
+  enableClientRenderFallbackOnHydrationMismatch,
+  enableSuspenseAvoidThisFallback,
+} from 'shared/ReactFeatureFlags';
 
 import {resetWorkInProgressVersions as resetMutableSourceWorkInProgressVersions} from './ReactMutableSource.new';
 
@@ -74,6 +77,9 @@ import {
   StaticMask,
   MutationMask,
   Passive,
+  Incomplete,
+  ShouldCapture,
+  ForceClientRender,
 } from './ReactFiberFlags';
 
 import {
@@ -120,9 +126,12 @@ import {
   prepareToHydrateHostInstance,
   prepareToHydrateHostTextInstance,
   prepareToHydrateHostSuspenseInstance,
+  warnIfUnhydratedTailNodes,
   popHydrationState,
   resetHydrationState,
   getIsHydrating,
+  hasUnhydratedTailNodes,
+  upgradeHydrationErrorsToRecoverable,
 } from './ReactFiberHydrationContext.new';
 import {
   enableSuspenseCallback,
@@ -214,6 +223,7 @@ if (supportsMutation) {
     let node = workInProgress.child;
     while (node !== null) {
       if (node.tag === HostComponent || node.tag === HostText) {
+        // 将真实dom节点挂载到父节点上面
         appendInitialChild(parent, node.stateNode);
       } else if (node.tag === HostPortal) {
         // If we have a portal child, then we don't want to traverse
@@ -227,6 +237,7 @@ if (supportsMutation) {
       if (node === workInProgress) {
         return;
       }
+      // 处理多层级情况
       while (node.sibling === null) {
         if (node.return === null || node.return === workInProgress) {
           return;
@@ -898,6 +909,7 @@ function completeWork(
       const rootContainerInstance = getRootHostContainer();
       const type = workInProgress.type;
       if (current !== null && workInProgress.stateNode != null) {
+        // 更新dom节点
         updateHostComponent(
           current,
           workInProgress,
@@ -944,6 +956,7 @@ function completeWork(
             markUpdate(workInProgress);
           }
         } else {
+          // 创建真实dom节点
           const instance = createInstance(
             type,
             newProps,
@@ -952,14 +965,17 @@ function completeWork(
             workInProgress,
           );
 
+          // 初次渲染的时候将真实dom节点挂载到父结点上
           appendAllChildren(instance, workInProgress, false, false);
 
+          // 将真实DOM添加到stateNode上面
           workInProgress.stateNode = instance;
 
           // Certain renderers require commit-time effects for initial mount.
           // (eg DOM renderer supports auto-focus for certain elements).
           // Make sure such renderers get scheduled for later work.
           if (
+            // 给真实DOM添加属性
             finalizeInitialChildren(
               instance,
               type,
@@ -1021,6 +1037,18 @@ function completeWork(
       const nextState: null | SuspenseState = workInProgress.memoizedState;
 
       if (enableSuspenseServerRenderer) {
+        if (
+          enableClientRenderFallbackOnHydrationMismatch &&
+          hasUnhydratedTailNodes() &&
+          (workInProgress.mode & ConcurrentMode) !== NoMode &&
+          (workInProgress.flags & DidCapture) === NoFlags
+        ) {
+          warnIfUnhydratedTailNodes(workInProgress);
+          resetHydrationState();
+          workInProgress.flags |=
+            ForceClientRender | Incomplete | ShouldCapture;
+          return workInProgress;
+        }
         if (nextState !== null && nextState.dehydrated !== null) {
           // We might be inside a hydration state the first time we're picking up this
           // Suspense boundary, and also after we've reentered it for further hydration.
@@ -1079,6 +1107,12 @@ function completeWork(
             return null;
           }
         }
+
+        // Successfully completed this tree. If this was a forced client render,
+        // there may have been recoverable errors during first hydration
+        // attempt. If so, add them to a queue so we can log them in the
+        // commit phase.
+        upgradeHydrationErrorsToRecoverable();
       }
 
       if ((workInProgress.flags & DidCapture) !== NoFlags) {

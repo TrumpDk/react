@@ -303,6 +303,7 @@ export function finalizeInitialChildren(
   rootContainerInstance: Container,
   hostContext: HostContext,
 ): boolean {
+  // 给DOM元素添加属性
   setInitialProperties(domElement, type, props, rootContainerInstance);
   return shouldAutoFocusHostComponent(type, props);
 }
@@ -373,6 +374,18 @@ export function getCurrentEventPriority(): * {
   }
   return getEventPriority(currentEvent.type);
 }
+
+/* global reportError */
+export const logRecoverableError =
+  typeof reportError === 'function'
+    ? // In modern browsers, reportError will dispatch an error event,
+      // emulating an uncaught JavaScript error.
+      reportError
+    : (error: mixed) => {
+        // In older browsers and test environments, fallback to console.error.
+        // eslint-disable-next-line react-internal/no-production-logging, react-internal/warning-args
+        console.error(error);
+      };
 
 export const isPrimaryRenderer = true;
 export const warnsIfNotActing = true;
@@ -1070,6 +1083,8 @@ export function didNotFindHydratableSuspenseInstance(
 
 export function errorHydratingContainer(parentContainer: Container): void {
   if (__DEV__) {
+    // TODO: This gets logged by onRecoverableError, too, so we should be
+    // able to remove it.
     console.error(
       'An error occurred during hydration. The server HTML was replaced with client content in <%s>.',
       parentContainer.nodeName.toLowerCase(),

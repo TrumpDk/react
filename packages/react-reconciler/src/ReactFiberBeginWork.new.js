@@ -35,7 +35,8 @@ import checkPropTypes from 'shared/checkPropTypes';
 import {
   markComponentRenderStarted,
   markComponentRenderStopped,
-} from './SchedulingProfiler';
+  setIsStrictModeForDevtools,
+} from './ReactFiberDevToolsHook.new';
 import {
   IndeterminateComponent,
   FunctionComponent,
@@ -173,7 +174,7 @@ import {
   checkIfContextChanged,
   readContext,
   prepareToReadContext,
-  scheduleWorkOnParentPath,
+  scheduleContextWorkOnParentPath,
 } from './ReactFiberNewContext.new';
 import {
   renderWithHooks,
@@ -240,7 +241,6 @@ import {createCapturedValue} from './ReactCapturedValue';
 import {createClassErrorUpdate} from './ReactFiberThrow.new';
 import {completeSuspendedOffscreenHostContainer} from './ReactFiberCompleteWork.new';
 import is from 'shared/objectIs';
-import {setIsStrictModeForDevtools} from './ReactFiberDevToolsHook.new';
 import {
   getForksAtLevel,
   isForkedChild,
@@ -277,20 +277,23 @@ if (__DEV__) {
 export function reconcileChildren(
   current: Fiber | null,
   workInProgress: Fiber,
-  nextChildren: any,
+  nextChildren: any, // 新fiber child
   renderLanes: Lanes,
 ) {
+  // current为空说明当前是初次渲染，不为空则说明是更新
   if (current === null) {
     // If this is a fresh new component that hasn't been rendered yet, we
     // won't update its child set by applying minimal side-effects. Instead,
     // we will add them all to the child before it gets rendered. That means
     // we can optimize this reconciliation pass by not tracking side-effects.
+    // 当前节点为空则构建 mountchildren fiber
     workInProgress.child = mountChildFibers(
       workInProgress,
-      null,
+      null, // 
       nextChildren,
       renderLanes,
     );
+    // 当前节点不为空 说明当前发生了更新 需要构建 reconcileChild fiber 不会调用diff算法
   } else {
     // If the current child is the same as the work in progress, it means that
     // we haven't yet started any work on these children. Therefore, we use
@@ -298,6 +301,7 @@ export function reconcileChildren(
 
     // If we had any progressed work already, that is invalid at this point so
     // let's throw it out.
+    // 会调用diff算法
     workInProgress.child = reconcileChildFibers(
       workInProgress,
       current.child,
@@ -1322,6 +1326,7 @@ function updateHostRoot(current, workInProgress, renderLanes) {
 
   // Caution: React DevTools currently depends on this property
   // being called "element".
+  // 新的vdom对应的新fiber的children
   const nextChildren = nextState.element;
   if (nextChildren === prevChildren) {
     resetHydrationState();
@@ -1386,13 +1391,19 @@ function updateHostComponent(
     tryToClaimNextHydratableInstance(workInProgress);
   }
 
+  // 获取workInProgress类型
   const type = workInProgress.type;
+  // 获取更新的props
   const nextProps = workInProgress.pendingProps;
+  // 获取老props
   const prevProps = current !== null ? current.memoizedProps : null;
 
+  // 获取nextChildren
   let nextChildren = nextProps.children;
+  // 如果props.children是字符串或者文本 只需要更新文本 不需要额外创建fiber节点
   const isDirectTextChild = shouldSetTextContent(type, nextProps);
 
+  // 如果当前子节点是文本节点则不另外单独创建fiber对象直接清空 当作节点元素处理即可
   if (isDirectTextChild) {
     // We special case a direct text child of a host node. This is a common
     // case. We won't handle it as a reified child. We will instead handle
@@ -2754,13 +2765,17 @@ function updateDehydratedSuspenseComponent(
   }
 }
 
-function scheduleWorkOnFiber(fiber: Fiber, renderLanes: Lanes) {
+function scheduleSuspenseWorkOnFiber(
+  fiber: Fiber,
+  renderLanes: Lanes,
+  propagationRoot: Fiber,
+) {
   fiber.lanes = mergeLanes(fiber.lanes, renderLanes);
   const alternate = fiber.alternate;
   if (alternate !== null) {
     alternate.lanes = mergeLanes(alternate.lanes, renderLanes);
   }
-  scheduleWorkOnParentPath(fiber.return, renderLanes);
+  scheduleContextWorkOnParentPath(fiber.return, renderLanes, propagationRoot);
 }
 
 function propagateSuspenseContextChange(
@@ -2776,7 +2791,7 @@ function propagateSuspenseContextChange(
     if (node.tag === SuspenseComponent) {
       const state: SuspenseState | null = node.memoizedState;
       if (state !== null) {
-        scheduleWorkOnFiber(node, renderLanes);
+        scheduleSuspenseWorkOnFiber(node, renderLanes, workInProgress);
       }
     } else if (node.tag === SuspenseListComponent) {
       // If the tail is hidden there might not be an Suspense boundaries
@@ -2784,7 +2799,7 @@ function propagateSuspenseContextChange(
       // list itself.
       // We don't have to traverse to the children of the list since
       // the list will propagate the change when it rerenders.
-      scheduleWorkOnFiber(node, renderLanes);
+      scheduleSuspenseWorkOnFiber(node, renderLanes, workInProgress);
     } else if (node.child !== null) {
       node.child.return = node;
       node = node.child;
@@ -3645,7 +3660,9 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
   }
   return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
 }
-
+// workInprogress.alternate == current
+// 初次渲染应该两个都一样的
+// 更新就会不同
 function beginWork(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -3668,13 +3685,15 @@ function beginWork(
       );
     }
   }
-
   if (current !== null) {
+    // 二者取的位置不一样
     const oldProps = current.memoizedProps;
     const newProps = workInProgress.pendingProps;
 
     if (
+      // 新老Props不一样说明存在更新
       oldProps !== newProps ||
+      // 存在老的context并且发生了变化
       hasLegacyContextChanged() ||
       // Force a re-render if the implementation changed due to hot reload:
       (__DEV__ ? workInProgress.type !== current.type : false)
@@ -3685,6 +3704,7 @@ function beginWork(
     } else {
       // Neither props nor legacy context changes. Check if there's a pending
       // update or context change.
+      // 二者都没变化 检查下是否有pending update或者cotext变化
       const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
         current,
         renderLanes,
@@ -3697,6 +3717,7 @@ function beginWork(
       ) {
         // No pending updates or context. Bail out now.
         didReceiveUpdate = false;
+        // 没有变化则复用当前节点
         return attemptEarlyBailoutIfNoScheduledUpdate(
           current,
           workInProgress,
@@ -3741,8 +3762,10 @@ function beginWork(
   // move this assignment out of the common path and into each branch.
   workInProgress.lanes = NoLanes;
 
+  // 根具不同的tag决定是挂载、更新组件
   switch (workInProgress.tag) {
     case IndeterminateComponent: {
+      // 只有在第一次渲染的情况下才会出现IndeterminateComponent
       return mountIndeterminateComponent(
         current,
         workInProgress,

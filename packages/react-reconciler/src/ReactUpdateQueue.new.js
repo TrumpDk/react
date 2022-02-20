@@ -237,9 +237,17 @@ export function enqueueUpdate<State>(
   } else {
     const pending = sharedQueue.pending;
     if (pending === null) {
-      // This is the first update. Create a circular list.
+      // for the first update. Create a circular list.
+      // if there is no update job, then create a circular list first
+      // for example A.next -> A, we create closed cicular list here
       update.next = update;
     } else {
+      // create a closed circular list also
+      // pending a->b->a
+      // update enqueue e
+      // a->b->e
+      // a->b->e->a
+      // pending -> e
       update.next = pending.next;
       pending.next = update;
     }

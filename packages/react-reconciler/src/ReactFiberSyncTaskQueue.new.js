@@ -32,6 +32,7 @@ export function scheduleSyncCallback(callback: SchedulerCallback) {
   }
 }
 
+// 将更新的callback推入到syncQueue同步队列当中过去
 export function scheduleLegacySyncCallback(callback: SchedulerCallback) {
   includesLegacySyncCallbacks = true;
   scheduleSyncCallback(callback);
@@ -51,33 +52,44 @@ export function flushSyncCallbacksOnlyInLegacyMode() {
 export function flushSyncCallbacks() {
   if (!isFlushingSyncQueue && syncQueue !== null) {
     // Prevent re-entrance.
+    // 通过flag防止重入逻辑
     isFlushingSyncQueue = true;
+    // work索引
     let i = 0;
+    // 获取当前更新任务优先级
     const previousUpdatePriority = getCurrentUpdatePriority();
     try {
       const isSync = true;
       const queue = syncQueue;
       // TODO: Is this necessary anymore? The only user code that runs in this
       // queue is in the render or commit phases.
+      // 设置个离散事件优先级
       setCurrentUpdatePriority(DiscreteEventPriority);
+      // 将queue取出一个个执行
       for (; i < queue.length; i++) {
         let callback = queue[i];
         do {
           callback = callback(isSync);
         } while (callback !== null);
       }
+      // 执行完了清空
       syncQueue = null;
+      // flag置为false
       includesLegacySyncCallbacks = false;
     } catch (error) {
       // If something throws, leave the remaining callbacks on the queue.
+      // 如果出错，取出队列中剩下任务，保存，便于后续执行
       if (syncQueue !== null) {
         syncQueue = syncQueue.slice(i + 1);
       }
       // Resume flushing in the next tick
+      // 执行下个任务
       scheduleCallback(ImmediatePriority, flushSyncCallbacks);
       throw error;
     } finally {
+      // 重置优先级
       setCurrentUpdatePriority(previousUpdatePriority);
+      // 重置flag
       isFlushingSyncQueue = false;
     }
   }

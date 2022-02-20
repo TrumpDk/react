@@ -243,19 +243,23 @@ export function resolveLazyComponentTag(Component: Function): WorkTag {
 
 // This is used to create an alternate fiber to do work on.
 export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
+  // 拿到alternate
   let workInProgress = current.alternate;
+  // 不存在说明是新增
   if (workInProgress === null) {
     // We use a double buffering pooling technique because we know that we'll
     // only ever need at most two versions of a tree. We pool the "other" unused
     // node that we're free to reuse. This is lazily created to avoid allocating
     // extra objects for things that are never updated. It also allow us to
     // reclaim the extra memory if needed.
+    // 新创建workInProgress Fiber
     workInProgress = createFiber(
       current.tag,
       pendingProps,
       current.key,
       current.mode,
     );
+    // 挂在fiber信息
     workInProgress.elementType = current.elementType;
     workInProgress.type = current.type;
     workInProgress.stateNode = current.stateNode;
@@ -267,10 +271,11 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
       workInProgress._debugOwner = current._debugOwner;
       workInProgress._debugHookTypes = current._debugHookTypes;
     }
-
+    // 由于当前只有一个fiber链 所以 current和alternate互相指向
     workInProgress.alternate = current;
     current.alternate = workInProgress;
   } else {
+    // 更新状态下触发
     workInProgress.pendingProps = pendingProps;
     // Needed because Blocks store data on type.
     workInProgress.type = current.type;
@@ -295,6 +300,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
 
   // Reset all effects except static ones.
   // Static effects are not specific to a render.
+  // 和当前fiber互换下信息 切换过来渲染
   workInProgress.flags = current.flags & StaticMask;
   workInProgress.childLanes = current.childLanes;
   workInProgress.lanes = current.lanes;
@@ -309,6 +315,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   const currentDependencies = current.dependencies;
   workInProgress.dependencies =
     currentDependencies === null
+    // 新建一个引用 防止冲突
       ? null
       : {
           lanes: currentDependencies.lanes,
@@ -343,7 +350,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
         break;
     }
   }
-
+  // 返回workInProgress对象
   return workInProgress;
 }
 

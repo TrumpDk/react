@@ -44,7 +44,11 @@ import {
   isContextProvider as isLegacyContextProvider,
 } from './ReactFiberContext.new';
 import {createFiberRoot} from './ReactFiberRoot.new';
-import {injectInternals, onScheduleRoot} from './ReactFiberDevToolsHook.new';
+import {
+  injectInternals,
+  markRenderScheduled,
+  onScheduleRoot,
+} from './ReactFiberDevToolsHook.new';
 import {
   requestEventTime,
   requestUpdateLane,
@@ -87,7 +91,6 @@ import {
   setRefreshHandler,
   findHostInstancesForRefresh,
 } from './ReactFiberHotReloading.new';
-import {markRenderScheduled} from './SchedulingProfiler';
 import ReactVersion from 'shared/ReactVersion';
 export {registerMutableSourceForHydration} from './ReactMutableSource.new';
 export {createPortal} from './ReactPortal';
@@ -136,6 +139,7 @@ function getContextForSubtree(
   }
 
   const fiber = getInstance(parentComponent);
+  // get current fiber context provider
   const parentContext = findCurrentUnmaskedContext(fiber);
 
   if (fiber.tag === ClassComponent) {
@@ -242,6 +246,7 @@ export function createContainer(
   isStrictMode: boolean,
   concurrentUpdatesByDefaultOverride: null | boolean,
   identifierPrefix: string,
+  onRecoverableError: null | ((error: mixed) => void),
 ): OpaqueRoot {
   return createFiberRoot(
     containerInfo,
@@ -251,6 +256,7 @@ export function createContainer(
     isStrictMode,
     concurrentUpdatesByDefaultOverride,
     identifierPrefix,
+    onRecoverableError,
   );
 }
 
@@ -295,6 +301,7 @@ export function updateContainer(
     }
   }
 
+  // create udpate linked list for example update.next -> next update
   const update = createUpdate(eventTime, lane);
   // Caution: React DevTools currently depends on this property
   // being called "element".
@@ -314,6 +321,7 @@ export function updateContainer(
     update.callback = callback;
   }
 
+  // enqueue update fiber into sharedQueue
   enqueueUpdate(current, update, lane);
   const root = scheduleUpdateOnFiber(current, lane, eventTime);
   if (root !== null) {

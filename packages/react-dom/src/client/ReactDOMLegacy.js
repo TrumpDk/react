@@ -115,13 +115,14 @@ function legacyCreateRootFromDOMContainer(
   }
 
   const root = createContainer(
-    container, // dpm container
+    container, // dom container
     LegacyRoot,  // ==> 0
     forceHydrate,  // false
     null, // hydrationCallbacks
     false, // isStrictMode
     false, // concurrentUpdatesByDefaultOverride,
-    '', // identiferPrefix
+    '', // identifierPrefix
+    null,
   );
   markContainerAsRoot(root.current, container);
 

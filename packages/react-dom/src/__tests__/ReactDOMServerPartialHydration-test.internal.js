@@ -208,7 +208,11 @@ describe('ReactDOMServerPartialHydration', () => {
     // On the client we don't have all data yet but we want to start
     // hydrating anyway.
     suspend = true;
-    ReactDOM.hydrateRoot(container, <App />);
+    ReactDOM.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        Scheduler.unstable_yieldValue(error.message);
+      },
+    });
     if (gate(flags => flags.enableClientRenderFallbackOnHydrationMismatch)) {
       Scheduler.unstable_flushAll();
     } else {
@@ -290,7 +294,11 @@ describe('ReactDOMServerPartialHydration', () => {
     suspend = true;
     client = true;
 
-    ReactDOM.hydrateRoot(container, <App />);
+    ReactDOM.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        Scheduler.unstable_yieldValue(error.message);
+      },
+    });
     expect(Scheduler).toFlushAndYield([
       'Suspend',
       'Component',
@@ -316,12 +324,16 @@ describe('ReactDOMServerPartialHydration', () => {
       'Component',
       'Component',
       'Component',
+
       // second pass as client render
       'Hello',
       'Component',
       'Component',
       'Component',
       'Component',
+
+      // Hydration mismatch is logged
+      'An error occurred during hydration. The server HTML was replaced with client content',
     ]);
 
     // Client rendered - suspense comment nodes removed
@@ -437,7 +449,7 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(container.innerHTML).toContain('<div>Sibling</div>');
   });
 
-  it('recovers when server rendered additional nodes', async () => {
+  it('recovers with client render when server rendered additional nodes at suspense root', async () => {
     const ref = React.createRef();
     function App({hasB}) {
       return (
@@ -462,15 +474,138 @@ describe('ReactDOMServerPartialHydration', () => {
     expect(container.innerHTML).toContain('<span>B</span>');
     expect(ref.current).toBe(null);
 
-    ReactDOM.hydrateRoot(container, <App hasB={false} />);
     expect(() => {
-      Scheduler.unstable_flushAll();
+      act(() => {
+        ReactDOM.hydrateRoot(container, <App hasB={false} />);
+      });
     }).toErrorDev('Did not expect server HTML to contain a <span> in <div>');
+
     jest.runAllTimers();
 
     expect(container.innerHTML).toContain('<span>A</span>');
     expect(container.innerHTML).not.toContain('<span>B</span>');
-    expect(ref.current).toBe(span);
+
+    if (gate(flags => flags.enableClientRenderFallbackOnHydrationMismatch)) {
+      expect(ref.current).not.toBe(span);
+    } else {
+      expect(ref.current).toBe(span);
+    }
+  });
+
+  it('recovers with client render when server rendered additional nodes at suspense root after unsuspending', async () => {
+    spyOnDev(console, 'error');
+    const ref = React.createRef();
+    function App({hasB}) {
+      return (
+        <div>
+          <Suspense fallback="Loading...">
+            <Suspender />
+            <span ref={ref}>A</span>
+            {hasB ? <span>B</span> : null}
+          </Suspense>
+          <div>Sibling</div>
+        </div>
+      );
+    }
+
+    let shouldSuspend = false;
+    let resolve;
+    const promise = new Promise(res => {
+      resolve = () => {
+        shouldSuspend = false;
+        res();
+      };
+    });
+    function Suspender() {
+      if (shouldSuspend) {
+        throw promise;
+      }
+      return <></>;
+    }
+
+    const finalHTML = ReactDOMServer.renderToString(<App hasB={true} />);
+
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+
+    const span = container.getElementsByTagName('span')[0];
+
+    expect(container.innerHTML).toContain('<span>A</span>');
+    expect(container.innerHTML).toContain('<span>B</span>');
+    expect(ref.current).toBe(null);
+
+    shouldSuspend = true;
+    act(() => {
+      ReactDOM.hydrateRoot(container, <App hasB={false} />);
+    });
+
+    // await expect(async () => {
+    resolve();
+    await promise;
+    Scheduler.unstable_flushAll();
+    await null;
+    jest.runAllTimers();
+    // }).toErrorDev('Did not expect server HTML to contain a <span> in <div>');
+
+    expect(container.innerHTML).toContain('<span>A</span>');
+    expect(container.innerHTML).not.toContain('<span>B</span>');
+    if (gate(flags => flags.enableClientRenderFallbackOnHydrationMismatch)) {
+      expect(ref.current).not.toBe(span);
+    } else {
+      expect(ref.current).toBe(span);
+    }
+  });
+
+  it('recovers with client render when server rendered additional nodes deep inside suspense root', async () => {
+    const ref = React.createRef();
+    function App({hasB}) {
+      return (
+        <div>
+          <Suspense fallback="Loading...">
+            <div>
+              <span ref={ref}>A</span>
+              {hasB ? <span>B</span> : null}
+            </div>
+          </Suspense>
+          <div>Sibling</div>
+        </div>
+      );
+    }
+
+    const finalHTML = ReactDOMServer.renderToString(<App hasB={true} />);
+
+    const container = document.createElement('div');
+    container.innerHTML = finalHTML;
+
+    const span = container.getElementsByTagName('span')[0];
+
+    expect(container.innerHTML).toContain('<span>A</span>');
+    expect(container.innerHTML).toContain('<span>B</span>');
+    expect(ref.current).toBe(null);
+
+    expect(() => {
+      act(() => {
+        ReactDOM.hydrateRoot(container, <App hasB={false} />, {
+          onRecoverableError(error) {
+            Scheduler.unstable_yieldValue(error.message);
+          },
+        });
+      });
+    }).toErrorDev('Did not expect server HTML to contain a <span> in <div>');
+    if (gate(flags => flags.enableClientRenderFallbackOnHydrationMismatch)) {
+      expect(Scheduler).toHaveYielded([
+        'An error occurred during hydration. The server HTML was replaced ' +
+          'with client content',
+      ]);
+    }
+
+    expect(container.innerHTML).toContain('<span>A</span>');
+    expect(container.innerHTML).not.toContain('<span>B</span>');
+    if (gate(flags => flags.enableClientRenderFallbackOnHydrationMismatch)) {
+      expect(ref.current).not.toBe(span);
+    } else {
+      expect(ref.current).toBe(span);
+    }
   });
 
   it('calls the onDeleted hydration callback if the parent gets deleted', async () => {
@@ -2884,7 +3019,13 @@ describe('ReactDOMServerPartialHydration', () => {
     const span = container.getElementsByTagName('span')[0];
     expect(span.innerHTML).toBe('Hidden child');
 
-    ReactDOM.hydrateRoot(container, <App />);
+    ReactDOM.hydrateRoot(container, <App />, {
+      onRecoverableError(error) {
+        Scheduler.unstable_yieldValue(
+          'Log recoverable error: ' + error.message,
+        );
+      },
+    });
 
     Scheduler.unstable_flushAll();
     expect(ref.current).toBe(span);
@@ -3029,13 +3170,27 @@ describe('ReactDOMServerPartialHydration', () => {
 
     expect(() => {
       act(() => {
-        ReactDOM.hydrateRoot(container, <App />);
+        ReactDOM.hydrateRoot(container, <App />, {
+          onRecoverableError(error) {
+            Scheduler.unstable_yieldValue(
+              'Log recoverable error: ' + error.message,
+            );
+          },
+        });
       });
     }).toErrorDev(
       'Warning: An error occurred during hydration. ' +
         'The server HTML was replaced with client content in <div>.',
       {withoutStack: true},
     );
+    expect(Scheduler).toHaveYielded([
+      'Log recoverable error: An error occurred during hydration. The server ' +
+        'HTML was replaced with client content',
+      // TODO: There were multiple mismatches in a single container. Should
+      // we attempt to de-dupe them?
+      'Log recoverable error: An error occurred during hydration. The server ' +
+        'HTML was replaced with client content',
+    ]);
 
     // We show fallback state when mismatch happens at root
     expect(container.innerHTML).toEqual(

@@ -345,7 +345,7 @@ export function listenToNativeEvent(
   addTrappedEventListener(
     target, // root element or owner element
     domEventName, // dom event name such as click
-    eventSystemFlags, // just a flag
+    eventSystemFlags, // just a flag 捕捉阶段的flag
     isCapturePhaseListener, // flag that means is capture pahse or not
   );
 }
@@ -389,6 +389,9 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
     allNativeEvents.forEach(domEventName => {
       // We handle selectionchange separately because it
       // doesn't bubble and needs to be on the document.
+
+      // selectionchange事件不冒泡到root container
+
       if (domEventName !== 'selectionchange') {
         if (!nonDelegatedEvents.has(domEventName)) {
           listenToNativeEvent(domEventName, false, rootContainerElement);
@@ -403,6 +406,8 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
     if (ownerDocument !== null) {
       // The selectionchange event also needs deduplication
       // but it is attached to the document.
+      
+      // 单独处理selectionchange事件 冒泡到document上面
       if (!(ownerDocument: any)[listeningMarker]) {
         (ownerDocument: any)[listeningMarker] = true;
         listenToNativeEvent('selectionchange', false, ownerDocument);
@@ -414,8 +419,8 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
 function addTrappedEventListener(
   targetContainer: EventTarget,  // dom element container or owner container
   domEventName: DOMEventName, // dom event name
-  eventSystemFlags: EventSystemFlags,
-  isCapturePhaseListener: boolean, // capture pahse event flag
+  eventSystemFlags: EventSystemFlags, // number type
+  isCapturePhaseListener: boolean, // capture pahse event true/false
   isDeferredListenerForLegacyFBSupport?: boolean,
 ) {
   // return a function with event priority level
