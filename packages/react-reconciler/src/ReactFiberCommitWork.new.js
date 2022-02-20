@@ -337,6 +337,7 @@ export function commitBeforeMutationEffects(
 }
 
 function commitBeforeMutationEffects_begin() {
+  // dfs遍历所有节点
   while (nextEffect !== null) {
     const fiber = nextEffect;
 
@@ -353,6 +354,8 @@ function commitBeforeMutationEffects_begin() {
       }
     }
 
+    // 修正child的return指向 确保让child return指向父节点
+    // 然后开始处理子节点
     const child = fiber.child;
     if (
       (fiber.subtreeFlags & BeforeMutationMask) !== NoFlags &&
@@ -378,13 +381,15 @@ function commitBeforeMutationEffects_complete() {
     }
     resetCurrentDebugFiberInDEV();
 
-    const sibling = fiber.sibling;
+    // 有兄弟指向兄弟并返回
+    const sibling = fiber.sibling;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
     if (sibling !== null) {
       ensureCorrectReturnPointer(sibling, fiber.return);
       nextEffect = sibling;
       return;
     }
 
+    // 没有兄弟指向父  节点
     nextEffect = fiber.return;
   }
 }
