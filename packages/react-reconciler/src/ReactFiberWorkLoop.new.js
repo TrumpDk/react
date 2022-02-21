@@ -1756,7 +1756,7 @@ function workLoopConcurrent() {
     performUnitOfWork(workInProgress);
   }
 }
-//                         workInProgressFiber  -> 将要处理的fiber
+//                         workInProgress  -> 将要处理的fiber
 function performUnitOfWork(unitOfWork: Fiber): void {
   // The current, flushed, state of this fiber is the alternate. Ideally
   // nothing should rely on this, but relying on it here means that we don't
@@ -2089,6 +2089,7 @@ function commitRootImpl(
     // The next phase is the mutation phase, where we mutate the host tree.
     // mutation阶段会更新真实DOM 这个阶段怎么收集effects 还没搞懂 毕竟effect list都已经重构了
     // 目前看到的就是DFS遍历处理的节点
+    //                       finishedWork finishedLanes
     commitMutationEffects(root, finishedWork, lanes);
 
     if (enableCreateEventHandleAPI) {

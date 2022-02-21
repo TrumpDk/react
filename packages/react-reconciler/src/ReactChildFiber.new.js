@@ -356,6 +356,7 @@ function ChildReconciler(shouldTrackSideEffects) {
       return lastPlacedIndex;
     }
     // 移动 插入等情况下的flags处理
+    // 之前tag不同的情况下current是null值
     const current = newFiber.alternate;
     if (current !== null) {
       const oldIndex = current.index;
@@ -832,7 +833,7 @@ function ChildReconciler(shouldTrackSideEffects) {
         nextOldFiber = oldFiber.sibling;
       }
       // 试图复用老的fiber,此时不能复用有两种情况，一是key不一样直接不能复用，这个时候会直接返回null，
-      // 二是key一样 但是节点类型改变了 此时会新建节点fiber并且返回 所以newFiber为空的情况下，肯定是
+      // 二是key一样 但是节点类型改变了 此时会新建节点fiber 所以newFiber为空的情况下，肯定是
       // key不同的情况 这个时候直接跳出循环 不再进行比较
       const newFiber = updateSlot(
         returnFiber,
@@ -852,6 +853,7 @@ function ChildReconciler(shouldTrackSideEffects) {
         break;
       }
       if (shouldTrackSideEffects) {
+        // 这种情况应该是新老fiber tag不一样 所以前面的updateSlot创建了新的fiber并返回了
         // 老fiber存在 新fiber并不复用老fiber 删掉当前fiber
         if (oldFiber && newFiber.alternate === null) {
           // We matched the slot, but we didn't reuse the existing fiber, so we
@@ -1262,10 +1264,11 @@ function ChildReconciler(shouldTrackSideEffects) {
         }
         // key相同type不同 
         // Didn't match.
+        // 删除包含当前fiber的所有fiber
         deleteRemainingChildren(returnFiber, child);
         break;
       } else {
-        // key type都没有匹配上全部删除
+        // 删除当前fiber
         deleteChild(returnFiber, child);
       }
       // 这个时候child指向兄弟节点 看看能不能复用

@@ -374,7 +374,7 @@ function commitBeforeMutationEffects_complete() {
     const fiber = nextEffect;
     setCurrentDebugFiberInDEV(fiber);
     try {
-      // 处理一些什么东西
+      // 执行一些生命周期的方法并且清理container
       commitBeforeMutationEffectsOnFiber(fiber);
     } catch (error) {
       reportUncaughtErrorInDEV(error);
@@ -567,8 +567,9 @@ function commitHookEffectListUnmount(
 function commitHookEffectListMount(flags: HookFlags, finishedWork: Fiber) {
   const updateQueue: FunctionComponentUpdateQueue | null = (finishedWork.updateQueue: any);
   const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
-  // 
   if (lastEffect !== null) {
+    // 循环链表
+    // 链表头部就是尾部的下一个
     const firstEffect = lastEffect.next;
     let effect = firstEffect;
     do {
@@ -1584,14 +1585,14 @@ function commitPlacement(finishedWork: Fiber): void {
   }
 
   // Recursively insert all host nodes into the parent.
-  // 递归找爸爸
+  // 递归找父fiber
   const parentFiber = getHostParentFiber(finishedWork);
 
   // Note: these two variables *must* always be updated together.
   // parent和isContainer这两个变量必须跟着一起改变
   let parent;
   let isContainer;
-  // 保存父节点信息
+  // 保存父Dom节点信息
   const parentStateNode = parentFiber.stateNode;
   switch (parentFiber.tag) {
     case HostComponent:
@@ -1620,6 +1621,9 @@ function commitPlacement(finishedWork: Fiber): void {
     parentFiber.flags &= ~ContentReset;
   }
 
+  // 查找有没有能够插入节点的位置
+  // 返回null表示待插入节点没有兄弟节点
+  // 不是null表示插入到找到的这个节点后面的位置
   const before = getHostSibling(finishedWork);
   // We only have the top Fiber that was inserted but we need to recurse down its
   // children to find all the terminal nodes.
@@ -2166,7 +2170,7 @@ export function commitMutationEffects(
   firstChild: Fiber, // finishedWork
   committedLanes: Lanes, // lanes
 ) {
-  // 获取当前提交的lane
+  // 本轮循环中finishedLanes
   inProgressLanes = committedLanes;
   // 当前的root
   inProgressRoot = root;
@@ -2180,7 +2184,8 @@ export function commitMutationEffects(
 }
 
 function commitMutationEffects_begin(root: FiberRoot) {
-  // DFS遍历effect
+  // 当前只负责进行DFS遍历每个fiber和commitDeletion进行优化 从而少进行操作
+  // 实际进行操作的部分是 commitMutationEffects_complete()方法
   while (nextEffect !== null) {
     const fiber = nextEffect;
 
@@ -2199,7 +2204,7 @@ function commitMutationEffects_begin(root: FiberRoot) {
       }
     }
 
-    // 开始DFS
+    // 有child先指向child 进行深度遍历
     const child = fiber.child;
     if ((fiber.subtreeFlags & MutationMask) !== NoFlags && child !== null) {
       ensureCorrectReturnPointer(child, fiber);
@@ -2323,7 +2328,7 @@ function commitMutationEffectsOnFiber(finishedWork: Fiber, root: FiberRoot) {
   const primaryFlags = flags & (Placement | Update | Hydrating);
   outer: switch (primaryFlags) {
 
-    // 根据effect flag体检更新 并且更改真实DOM节点
+    // 根据effectflag实现更新 并且更改真实DOM节点
 
     // 提交placement更改
     case Placement: {

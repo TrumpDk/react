@@ -275,7 +275,7 @@ if (__DEV__) {
 }
 
 export function reconcileChildren(
-  current: Fiber | null,
+  current: Fiber | null, // current是这当前渲染在屏幕上面的fiber
   workInProgress: Fiber,
   nextChildren: any, // 新fiber child
   renderLanes: Lanes,
@@ -304,8 +304,8 @@ export function reconcileChildren(
     // 会调用diff算法
     workInProgress.child = reconcileChildFibers(
       workInProgress,
-      current.child,
-      nextChildren,
+      current.child, // old first child
+      nextChildren, // new child
       renderLanes,
     );
   }
@@ -1403,13 +1403,14 @@ function updateHostComponent(
   // 如果props.children是字符串或者文本 只需要更新文本 不需要额外创建fiber节点
   const isDirectTextChild = shouldSetTextContent(type, nextProps);
 
-  // 如果当前子节点是文本节点则不另外单独创建fiber对象直接清空 当作节点元素处理即可
+  // 新的子节点是文本 直接清除子节点 将子节点的文本作为属性处理
   if (isDirectTextChild) {
     // We special case a direct text child of a host node. This is a common
     // case. We won't handle it as a reified child. We will instead handle
     // this in the host environment that also has access to this prop. That
     // avoids allocating another HostText fiber and traversing it.
     nextChildren = null;
+    //
   } else if (prevProps !== null && shouldSetTextContent(type, prevProps)) {
     // If we're switching from a direct text child to a normal child, or to
     // empty, we need to schedule the text content to be reset.
@@ -3697,8 +3698,8 @@ function beginWork(
       hasLegacyContextChanged() ||
       // Force a re-render if the implementation changed due to hot reload:
       (__DEV__ ? workInProgress.type !== current.type : false)
-    ) {
-      // If props or context changed, mark the fiber as having performed work.
+    ) { 
+      // If props or context changed, mark the fiber as having performed  work.
       // This may be unset if the props are determined to be equal later (memo).
       didReceiveUpdate = true;
     } else {
