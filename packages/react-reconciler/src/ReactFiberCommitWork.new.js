@@ -335,8 +335,7 @@ export function commitBeforeMutationEffects(
 }
 
 function commitBeforeMutationEffects_begin() {
-  // 这里的while先提交deletion effect, 然后会深入到当前fiber的child当中去
-  // 优先提交最深层的effect
+  // dfs遍历所有节点
   while (nextEffect !== null) {
     const fiber = nextEffect;
 
@@ -353,7 +352,8 @@ function commitBeforeMutationEffects_begin() {
       }
     }
 
-    // 取出child 麻痹太难了
+    // 修正child的return指向 确保让child return指向父节点
+    // 然后开始处理子节点
     const child = fiber.child;
     if (
       (fiber.subtreeFlags & BeforeMutationMask) !== NoFlags &&
@@ -382,8 +382,8 @@ function commitBeforeMutationEffects_complete() {
     }
     resetCurrentDebugFiberInDEV();
 
-    const sibling = fiber.sibling;
-    // 兄弟节点存在情况下 指向兄弟节点
+    // 有兄弟指向兄弟并返回
+    const sibling = fiber.sibling;                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
     if (sibling !== null) {
       ensureCorrectReturnPointer(sibling, fiber.return);
       // 如果兄弟节点没有遍历完 继续指向兄弟节点 不急着遍历父节点
