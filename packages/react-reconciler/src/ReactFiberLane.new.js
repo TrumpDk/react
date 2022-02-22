@@ -463,6 +463,10 @@ export function getLanesToRetrySynchronouslyOnError(root: FiberRoot): Lanes {
   return NoLanes;
 }
 
+export function includesSyncLane(lanes: Lanes) {
+  return (lanes & SyncLane) !== NoLanes;
+}
+
 export function includesNonIdleWork(lanes: Lanes) {
   return (lanes & NonIdleLanes) !== NoLanes;
 }

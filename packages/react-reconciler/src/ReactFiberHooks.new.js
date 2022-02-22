@@ -1290,7 +1290,8 @@ function mountSyncExternalStore<T>(
     nextSnapshot = getSnapshot();
     if (__DEV__) {
       if (!didWarnUncachedGetSnapshot) {
-        if (nextSnapshot !== getSnapshot()) {
+        const cachedSnapshot = getSnapshot();
+        if (!is(nextSnapshot, cachedSnapshot)) {
           console.error(
             'The result of getSnapshot should be cached to avoid an infinite loop',
           );
@@ -1362,7 +1363,8 @@ function updateSyncExternalStore<T>(
   const nextSnapshot = getSnapshot();
   if (__DEV__) {
     if (!didWarnUncachedGetSnapshot) {
-      if (nextSnapshot !== getSnapshot()) {
+      const cachedSnapshot = getSnapshot();
+      if (!is(nextSnapshot, cachedSnapshot)) {
         console.error(
           'The result of getSnapshot should be cached to avoid an infinite loop',
         );
@@ -1928,7 +1930,7 @@ function mountDeferredValue<T>(value: T): T {
   const [prevValue, setValue] = mountState(value);
   mountEffect(() => {
     const prevTransition = ReactCurrentBatchConfig.transition;
-    ReactCurrentBatchConfig.transition = 1;
+    ReactCurrentBatchConfig.transition = {};
     try {
       setValue(value);
     } finally {
@@ -1942,7 +1944,7 @@ function updateDeferredValue<T>(value: T): T {
   const [prevValue, setValue] = updateState(value);
   updateEffect(() => {
     const prevTransition = ReactCurrentBatchConfig.transition;
-    ReactCurrentBatchConfig.transition = 1;
+    ReactCurrentBatchConfig.transition = {};
     try {
       setValue(value);
     } finally {
@@ -1956,7 +1958,7 @@ function rerenderDeferredValue<T>(value: T): T {
   const [prevValue, setValue] = rerenderState(value);
   updateEffect(() => {
     const prevTransition = ReactCurrentBatchConfig.transition;
-    ReactCurrentBatchConfig.transition = 1;
+    ReactCurrentBatchConfig.transition = {};
     try {
       setValue(value);
     } finally {
@@ -1975,20 +1977,27 @@ function startTransition(setPending, callback) {
   setPending(true);
 
   const prevTransition = ReactCurrentBatchConfig.transition;
-  ReactCurrentBatchConfig.transition = 1;
+  ReactCurrentBatchConfig.transition = {};
+  const currentTransition = ReactCurrentBatchConfig.transition;
+
+  if (__DEV__) {
+    ReactCurrentBatchConfig.transition._updatedFibers = new Set();
+  }
+
   try {
     setPending(false);
     callback();
   } finally {
     setCurrentUpdatePriority(previousPriority);
+
     ReactCurrentBatchConfig.transition = prevTransition;
     if (__DEV__) {
       if (
-        prevTransition !== 1 &&
+        prevTransition === null &&
         warnOnSubscriptionInsideStartTransition &&
-        ReactCurrentBatchConfig._updatedFibers
+        currentTransition._updatedFibers
       ) {
-        const updatedFibersCount = ReactCurrentBatchConfig._updatedFibers.size;
+        const updatedFibersCount = currentTransition._updatedFibers.size;
         if (updatedFibersCount > 10) {
           console.warn(
             'Detected a large number of updates inside startTransition. ' +
@@ -1996,7 +2005,7 @@ function startTransition(setPending, callback) {
               'Otherwise concurrent mode guarantees are off the table.',
           );
         }
-        ReactCurrentBatchConfig._updatedFibers.clear();
+        currentTransition._updatedFibers.clear();
       }
     }
   }

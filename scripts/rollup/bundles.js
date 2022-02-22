@@ -245,12 +245,13 @@ const bundles = [
     externals: ['react', 'react-dom'],
   },
 
-  // TODO: We don't use this bundle anymore
   /******* React DOM - www - Testing *******/
   {
     moduleType: RENDERER,
-    bundleTypes: [FB_WWW_DEV, FB_WWW_PROD, NODE_DEV, NODE_PROD],
-    entry: 'react-dom/testing',
+    bundleTypes: __EXPERIMENTAL__
+      ? [FB_WWW_DEV, FB_WWW_PROD, NODE_DEV, NODE_PROD]
+      : [FB_WWW_DEV, FB_WWW_PROD],
+    entry: 'react-dom/unstable_testing',
     global: 'ReactDOMTesting',
     minifyWithProdErrorCodes: true,
     wrapWithModuleBoundaries: false,
@@ -268,7 +269,7 @@ const bundles = [
       FB_WWW_PROD,
     ],
     moduleType: RENDERER,
-    entry: 'react-dom/src/server/ReactDOMLegacyServerBrowser',
+    entry: 'react-dom/src/server/ReactDOMLegacyServerBrowser.js',
     name: 'react-dom-server-legacy.browser',
     global: 'ReactDOMServer',
     minifyWithProdErrorCodes: true,
@@ -284,7 +285,7 @@ const bundles = [
   {
     bundleTypes: [NODE_DEV, NODE_PROD],
     moduleType: RENDERER,
-    entry: 'react-dom/src/server/ReactDOMLegacyServerNode',
+    entry: 'react-dom/src/server/ReactDOMLegacyServerNode.js',
     name: 'react-dom-server-legacy.node',
     externals: ['react', 'stream'],
     minifyWithProdErrorCodes: false,
@@ -301,7 +302,7 @@ const bundles = [
   {
     bundleTypes: [NODE_DEV, NODE_PROD, UMD_DEV, UMD_PROD],
     moduleType: RENDERER,
-    entry: 'react-dom/src/server/ReactDOMFizzServerBrowser',
+    entry: 'react-dom/src/server/ReactDOMFizzServerBrowser.js',
     name: 'react-dom-server.browser',
     global: 'ReactDOMServer',
     minifyWithProdErrorCodes: true,
@@ -311,7 +312,7 @@ const bundles = [
   {
     bundleTypes: [NODE_DEV, NODE_PROD],
     moduleType: RENDERER,
-    entry: 'react-dom/src/server/ReactDOMFizzServerNode',
+    entry: 'react-dom/src/server/ReactDOMFizzServerNode.js',
     name: 'react-dom-server.node',
     global: 'ReactDOMServer',
     minifyWithProdErrorCodes: false,
@@ -321,7 +322,7 @@ const bundles = [
   {
     bundleTypes: __EXPERIMENTAL__ ? [FB_WWW_DEV, FB_WWW_PROD] : [],
     moduleType: RENDERER,
-    entry: 'react-server-dom-relay/src/ReactDOMServerFB',
+    entry: 'react-server-dom-relay/src/ReactDOMServerFB.js',
     global: 'ReactDOMServerStreaming',
     minifyWithProdErrorCodes: false,
     wrapWithModuleBoundaries: false,
