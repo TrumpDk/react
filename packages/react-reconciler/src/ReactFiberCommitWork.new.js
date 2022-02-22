@@ -697,7 +697,6 @@ export function commitPassiveEffectDurations(
 }
 
 // 根据不同节点类型进行相应的处理
-// 赋值ref
 function commitLayoutEffectOnFiber(
   finishedRoot: FiberRoot,
   current: Fiber | null,
@@ -707,6 +706,7 @@ function commitLayoutEffectOnFiber(
   if ((finishedWork.flags & LayoutMask) !== NoFlags) {
     // 分局不同节点类型进行处理
     switch (finishedWork.tag) {
+      // 对于函数组件和以函数组件实现的高阶组件的情形
       case FunctionComponent:
       case ForwardRef:
       case SimpleMemoComponent: {
@@ -1968,6 +1968,8 @@ function commitWork(current: Fiber | null, finishedWork: Fiber): void {
       return;
     }
     case ClassComponent: {
+      // classComponent在render阶段处理DOM 这里不处理
+      // 待定
       return;
     }
     case HostComponent: {
@@ -1983,6 +1985,8 @@ function commitWork(current: Fiber | null, finishedWork: Fiber): void {
         // TODO: Type the updateQueue to be specific to host components.
         const updatePayload: null | UpdatePayload = (finishedWork.updateQueue: any);
         finishedWork.updateQueue = null;
+        // update payload不为空则提交这些变更
+        // 进行DOM更新操作
         if (updatePayload !== null) {
           commitUpdate(
             instance,
@@ -2253,6 +2257,8 @@ function commitMutationEffectsOnFiber(finishedWork: Fiber, root: FiberRoot) {
     commitResetTextContent(finishedWork);
   }
 
+  // 解除ref
+  // 重新绑定ref
   if (flags & Ref) {
     const current = finishedWork.alternate;
     if (current !== null) {
@@ -2329,7 +2335,6 @@ function commitMutationEffectsOnFiber(finishedWork: Fiber, root: FiberRoot) {
   outer: switch (primaryFlags) {
 
     // 根据effectflag实现更新 并且更改真实DOM节点
-
     // 提交placement更改
     case Placement: {
       commitPlacement(finishedWork);

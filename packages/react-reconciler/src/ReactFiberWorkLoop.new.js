@@ -1781,7 +1781,7 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   // 当前任务没有递归完毕则继续递归，递归完毕则完成当前阶段递归任务
   if (next === null) {
     // If this doesn't spawn new work, complete the current work.
-    // 没有新的任务 完成当前阶段任务
+    // 挂载当前所有节点
     completeUnitOfWork(unitOfWork);
   } else {
     // 继续处理产生的新节点
@@ -2064,9 +2064,8 @@ function commitRootImpl(
     // state of the host tree right before we mutate it. This is where
     // getSnapshotBeforeUpdate is called.
 
-    // before mutation阶段
-    // 相当于采用DFS对每个节点进行遍历 进行一些处理
-    // 还有待观望
+    // 这个阶段就是通过dfs遍历把每个fiber取出来
+    // 如遇到class component则传入old props. new props执行getSnapShotBefore
     const shouldFireAfterActiveInstanceBlur = commitBeforeMutationEffects(
       root,
       finishedWork,
@@ -2090,7 +2089,6 @@ function commitRootImpl(
     // mutation阶段会更新真实DOM 这个阶段怎么收集effects 还没搞懂 毕竟effect list都已经重构了
     // 目前看到的就是DFS遍历处理的节点
     //                       finishedWork finishedLanes
-    // updateQueue是在这个阶段处理的
     commitMutationEffects(root, finishedWork, lanes);
 
     if (enableCreateEventHandleAPI) {
