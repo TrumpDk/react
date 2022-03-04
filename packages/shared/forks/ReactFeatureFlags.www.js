@@ -24,13 +24,13 @@ export const {
   enableLegacyFBSupport,
   deferRenderPhaseUpdateToNextBatch,
   enableDebugTracing,
+  skipUnmountedBoundaries,
   createRootStrictEffectsByDefault,
   enableUseRefAccessWarning,
   disableNativeComponentFrames,
   disableSchedulerTimeoutInWorkLoop,
   enableLazyContextPropagation,
   enableSyncDefaultUpdates,
-  warnOnSubscriptionInsideStartTransition,
   enableCapturePhaseSelectiveHydrationWithoutDiscreteEventReplay,
   enableClientRenderFallbackOnHydrationMismatch,
 } = dynamicFeatureFlags;
@@ -88,8 +88,6 @@ export const enableSuspenseCallback = true;
 export const enableComponentStackLocations = true;
 
 export const disableTextareaChildren = __EXPERIMENTAL__;
-
-export const warnUnstableRenderSubtreeIntoContainer = false;
 
 // Enable forked reconciler. Piggy-backing on the "variant" global so that we
 // don't have to add another test dimension. The build system will compile this

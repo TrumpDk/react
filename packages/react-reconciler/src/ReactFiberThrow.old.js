@@ -83,6 +83,7 @@ import {
 } from './ReactFiberLane.old';
 import {
   getIsHydrating,
+  markDidSuspendWhileHydratingDEV,
   queueHydrationError,
 } from './ReactFiberHydrationContext.old';
 
@@ -499,15 +500,11 @@ function throwException(
       // This is a sync/discrete update. We treat this case like an error
       // because discrete renders are expected to produce a complete tree
       // synchronously to maintain consistency with external state.
-
-      // TODO: We should never call getComponentNameFromFiber in production.
-      // Log a warning or something to prevent us from accidentally bundling it.
       const uncaughtSuspenseError = new Error(
-        (getComponentNameFromFiber(sourceFiber) || 'A React component') +
-          ' suspended while rendering, but no fallback UI was specified.\n' +
-          '\n' +
-          'Add a <Suspense fallback=...> component higher in the tree to ' +
-          'provide a loading indicator or placeholder to display.',
+        'A component suspended while responding to synchronous input. This ' +
+          'will cause the UI to be replaced with a loading indicator. To ' +
+          'fix, updates that suspend should be wrapped ' +
+          'with startTransition.',
       );
 
       // If we're outside a transition, fall through to the regular error path.
@@ -517,6 +514,8 @@ function throwException(
   } else {
     // This is a regular error, not a Suspense wakeable.
     if (getIsHydrating() && sourceFiber.mode & ConcurrentMode) {
+      markDidSuspendWhileHydratingDEV();
+
       const suspenseBoundary = getNearestSuspenseBoundaryToCapture(returnFiber);
       // If the error was thrown during hydration, we may be able to recover by
       // discarding the dehydrated content and switching to a client render.

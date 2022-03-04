@@ -31,6 +31,7 @@ import {
   scheduleWork,
   beginWriting,
   writeChunk,
+  writeChunkAndReturn,
   completeWriting,
   flushBuffered,
   close,
@@ -116,6 +117,7 @@ import {
   enableSuspenseAvoidThisFallbackFizz,
 } from 'shared/ReactFeatureFlags';
 
+import assign from 'shared/assign';
 import getComponentNameFromType from 'shared/getComponentNameFromType';
 import isArray from 'shared/isArray';
 
@@ -202,6 +204,7 @@ export opaque type Request = {
   // onErrorShell is called when the shell didn't complete. That means you probably want to
   // emit a different response to the stream instead.
   onErrorShell: (error: mixed) => void,
+  onFatalError: (error: mixed) => void,
 };
 
 // This is a default heuristic for how to split up the HTML content into progressive
@@ -236,6 +239,7 @@ export function createRequest(
   onCompleteAll: void | (() => void),
   onCompleteShell: void | (() => void),
   onErrorShell: void | ((error: mixed) => void),
+  onFatalError: void | ((error: mixed) => void),
 ): Request {
   const pingedTasks = [];
   const abortSet: Set<Task> = new Set();
@@ -261,6 +265,7 @@ export function createRequest(
     onCompleteAll: onCompleteAll === undefined ? noop : onCompleteAll,
     onCompleteShell: onCompleteShell === undefined ? noop : onCompleteShell,
     onErrorShell: onErrorShell === undefined ? noop : onErrorShell,
+    onFatalError: onFatalError === undefined ? noop : onFatalError,
   };
   // This segment represents the root fallback.
   const rootSegment = createPendingSegment(request, 0, null, rootFormatContext);
@@ -836,7 +841,7 @@ function validateFunctionComponentInDev(Component: any): void {
 function resolveDefaultProps(Component: any, baseProps: Object): Object {
   if (Component && Component.defaultProps) {
     // Resolve default props. Taken from ReactElement
-    const props = Object.assign({}, baseProps);
+    const props = assign({}, baseProps);
     const defaultProps = Component.defaultProps;
     for (const propName in defaultProps) {
       if (props[propName] === undefined) {
@@ -1615,8 +1620,11 @@ function flushSubtree(
         r = flushSegment(request, destination, nextChild);
       }
       // Finally just write all the remaining chunks
-      for (; chunkIdx < chunks.length; chunkIdx++) {
-        r = writeChunk(destination, chunks[chunkIdx]);
+      for (; chunkIdx < chunks.length - 1; chunkIdx++) {
+        writeChunk(destination, chunks[chunkIdx]);
+      }
+      if (chunkIdx < chunks.length) {
+        r = writeChunkAndReturn(destination, chunks[chunkIdx]);
       }
       return r;
     }
@@ -1948,6 +1956,10 @@ export function startFlowing(request: Request, destination: Destination): void {
     return;
   }
   if (request.status === CLOSED) {
+    return;
+  }
+  if (request.destination !== null) {
+    // We're already flowing.
     return;
   }
   request.destination = destination;

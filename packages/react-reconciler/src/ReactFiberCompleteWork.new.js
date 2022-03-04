@@ -62,6 +62,7 @@ import {
   OffscreenComponent,
   LegacyHiddenComponent,
   CacheComponent,
+  TracingMarkerComponent,
 } from './ReactWorkTags';
 import {NoMode, ConcurrentMode, ProfileMode} from './ReactTypeOfMode';
 import {
@@ -141,6 +142,7 @@ import {
   enableCache,
   enableSuspenseLayoutEffectSemantics,
   enablePersistentOffscreenHostContainer,
+  enableTransitionTracing,
 } from 'shared/ReactFeatureFlags';
 import {
   renderDidSuspend,
@@ -160,12 +162,9 @@ import {
 import {resetChildFibers} from './ReactChildFiber.new';
 import {createScopeInstance} from './ReactFiberScope.new';
 import {transferActualDuration} from './ReactProfilerTimer.new';
-import {
-  popCacheProvider,
-  popRootCachePool,
-  popCachePool,
-} from './ReactFiberCacheComponent.new';
+import {popCacheProvider} from './ReactFiberCacheComponent.new';
 import {popTreeContext} from './ReactFiberTreeContext.new';
+import {popRootTransition, popTransition} from './ReactFiberTransition.new';
 
 function markUpdate(workInProgress: Fiber) {
   // Tag the fiber with an update effect. This turns a Placement into
@@ -864,7 +863,7 @@ function completeWork(
     case HostRoot: {
       const fiberRoot = (workInProgress.stateNode: FiberRoot);
       if (enableCache) {
-        popRootCachePool(fiberRoot, renderLanes);
+        popRootTransition(fiberRoot, renderLanes);
 
         let previousCache: Cache | null = null;
         if (current !== null) {
@@ -1558,7 +1557,7 @@ function completeWork(
           workInProgress.flags |= Passive;
         }
         if (current !== null) {
-          popCachePool(workInProgress);
+          popTransition(workInProgress);
         }
       }
 
@@ -1577,8 +1576,15 @@ function completeWork(
         }
         popCacheProvider(workInProgress, cache);
         bubbleProperties(workInProgress);
-        return null;
       }
+      return null;
+    }
+    case TracingMarkerComponent: {
+      if (enableTransitionTracing) {
+        // Bubble subtree flags before so we can set the flag property
+        bubbleProperties(workInProgress);
+      }
+      return null;
     }
   }
 

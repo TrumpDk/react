@@ -10,7 +10,7 @@
 'use strict';
 
 let React;
-let ReactDOM;
+let ReactDOMClient;
 let ReactDOMServer;
 let Scheduler;
 let act;
@@ -22,7 +22,7 @@ describe('useMutableSourceHydration', () => {
     jest.resetModules();
 
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
     ReactDOMServer = require('react-dom/server');
     Scheduler = require('scheduler');
 
@@ -160,7 +160,7 @@ describe('useMutableSourceHydration', () => {
     expect(source.listenerCount).toBe(0);
 
     act(() => {
-      ReactDOM.hydrateRoot(container, <TestComponent />, {
+      ReactDOMClient.hydrateRoot(container, <TestComponent />, {
         mutableSources: [mutableSource],
       });
     });
@@ -169,6 +169,7 @@ describe('useMutableSourceHydration', () => {
   });
 
   // @gate enableUseMutableSource
+  // @gate enableClientRenderFallbackOnHydrationMismatch
   it('should detect a tear before hydrating a component', () => {
     const source = createSource('one');
     const mutableSource = createMutableSource(source, param => param.version);
@@ -194,7 +195,7 @@ describe('useMutableSourceHydration', () => {
 
     expect(() => {
       act(() => {
-        ReactDOM.hydrateRoot(container, <TestComponent />, {
+        ReactDOMClient.hydrateRoot(container, <TestComponent />, {
           mutableSources: [mutableSource],
           onRecoverableError(error) {
             Scheduler.unstable_yieldValue('Log error: ' + error.message);
@@ -204,9 +205,18 @@ describe('useMutableSourceHydration', () => {
         source.value = 'two';
       });
     }).toErrorDev(
-      'Warning: Text content did not match. Server: "only:one" Client: "only:two"',
+      [
+        'Warning: Text content did not match. Server: "only:one" Client: "only:two"',
+        'Warning: An error occurred during hydration. The server HTML was replaced with client content in <div>.',
+      ],
+      {withoutStack: 1},
     );
-    expect(Scheduler).toHaveYielded(['only:two']);
+    expect(Scheduler).toHaveYielded([
+      'only:two',
+      'only:two',
+      'Log error: Text content does not match server-rendered HTML.',
+      'Log error: There was an error while hydrating. Because the error happened outside of a Suspense boundary, the entire root will switch to client rendering.',
+    ]);
     expect(source.listenerCount).toBe(1);
   });
 
@@ -246,7 +256,7 @@ describe('useMutableSourceHydration', () => {
       act(() => {
         if (gate(flags => flags.enableSyncDefaultUpdates)) {
           React.startTransition(() => {
-            ReactDOM.hydrateRoot(container, <TestComponent />, {
+            ReactDOMClient.hydrateRoot(container, <TestComponent />, {
               mutableSources: [mutableSource],
               onRecoverableError(error) {
                 Scheduler.unstable_yieldValue('Log error: ' + error.message);
@@ -254,7 +264,7 @@ describe('useMutableSourceHydration', () => {
             });
           });
         } else {
-          ReactDOM.hydrateRoot(container, <TestComponent />, {
+          ReactDOMClient.hydrateRoot(container, <TestComponent />, {
             mutableSources: [mutableSource],
             onRecoverableError(error) {
               Scheduler.unstable_yieldValue('Log error: ' + error.message);
@@ -339,7 +349,7 @@ describe('useMutableSourceHydration', () => {
         );
         if (gate(flags => flags.enableSyncDefaultUpdates)) {
           React.startTransition(() => {
-            ReactDOM.hydrateRoot(container, fragment, {
+            ReactDOMClient.hydrateRoot(container, fragment, {
               mutableSources: [mutableSource],
               onRecoverableError(error) {
                 Scheduler.unstable_yieldValue('Log error: ' + error.message);
@@ -347,7 +357,7 @@ describe('useMutableSourceHydration', () => {
             });
           });
         } else {
-          ReactDOM.hydrateRoot(container, fragment, {
+          ReactDOMClient.hydrateRoot(container, fragment, {
             mutableSources: [mutableSource],
             onRecoverableError(error) {
               Scheduler.unstable_yieldValue('Log error: ' + error.message);

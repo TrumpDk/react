@@ -40,6 +40,7 @@ import {
   enableSuspenseLayoutEffectSemantics,
   enableUpdaterTracking,
   enableCache,
+  enableTransitionTracing,
 } from 'shared/ReactFeatureFlags';
 import {
   FunctionComponent,
@@ -132,6 +133,8 @@ import {
   markCommitTimeOfFallback,
   enqueuePendingPassiveProfilerEffect,
   restorePendingUpdaters,
+  addTransitionStartCallbackToPendingTransition,
+  addTransitionCompleteCallbackToPendingTransition,
 } from './ReactFiberWorkLoop.new';
 import {
   NoFlags as NoHookEffect,
@@ -156,6 +159,7 @@ import {
   onCommitUnmount,
 } from './ReactFiberDevToolsHook.new';
 import {releaseCache, retainCache} from './ReactFiberCacheComponent.new';
+import {clearTransitionsForLanes} from './ReactFiberLane.new';
 
 let didWarnAboutUndefinedSnapshotBeforeUpdate: Set<mixed> | null = null;
 if (__DEV__) {
@@ -1008,8 +1012,10 @@ function commitLayoutEffectOnFiber(
       case IncompleteClassComponent:
       case ScopeComponent:
       case OffscreenComponent:
-      case LegacyHiddenComponent:
+      case LegacyHiddenComponent: {
         break;
+      }
+
       default:
         throw new Error(
           'This unit of work tag should not have side-effects. This error is ' +
@@ -2180,13 +2186,13 @@ export function commitMutationEffects(
   // finishedWork
   nextEffect = firstChild;
 
-  commitMutationEffects_begin(root);
+  commitMutationEffects_begin(root, committedLanes);
 
   inProgressLanes = null;
   inProgressRoot = null;
 }
 
-function commitMutationEffects_begin(root: FiberRoot) {
+function commitMutationEffects_begin(root: FiberRoot, lanes: Lanes) {
   // 当前只负责进行DFS遍历每个fiber和commitDeletion进行优化 从而少进行操作
   // 实际进行操作的部分是 commitMutationEffects_complete()方法
   while (nextEffect !== null) {
@@ -2213,19 +2219,17 @@ function commitMutationEffects_begin(root: FiberRoot) {
       ensureCorrectReturnPointer(child, fiber);
       nextEffect = child;
     } else {
-      commitMutationEffects_complete(root);
+      commitMutationEffects_complete(root, lanes);
     }
   }
 }
 
-// mutation effects compelete 阶段
-function commitMutationEffects_complete(root: FiberRoot) {
+function commitMutationEffects_complete(root: FiberRoot, lanes: Lanes) {
   while (nextEffect !== null) {
     const fiber = nextEffect;
     setCurrentDebugFiberInDEV(fiber);
     try {
-      // 对每个fiber进行操作
-      commitMutationEffectsOnFiber(fiber, root);
+      commitMutationEffectsOnFiber(fiber, root, lanes);
     } catch (error) {
       reportUncaughtErrorInDEV(error);
       captureCommitPhaseError(fiber, fiber.return, error);
@@ -2244,12 +2248,42 @@ function commitMutationEffects_complete(root: FiberRoot) {
   }
 }
 
-function commitMutationEffectsOnFiber(finishedWork: Fiber, root: FiberRoot) {
+function commitMutationEffectsOnFiber(
+  finishedWork: Fiber,
+  root: FiberRoot,
+  lanes: Lanes,
+) {
   // TODO: The factoring of this phase could probably be improved. Consider
   // switching on the type of work before checking the flags. That's what
   // we do in all the other phases. I think this one is only different
   // because of the shared reconciliation logic below.
   const flags = finishedWork.flags;
+
+  if (enableTransitionTracing) {
+    switch (finishedWork.tag) {
+      case HostRoot: {
+        const state = finishedWork.memoizedState;
+        const transitions = state.transitions;
+        if (transitions !== null) {
+          transitions.forEach(transition => {
+            // TODO(luna) Do we want to log TransitionStart in the startTransition callback instead?
+            addTransitionStartCallbackToPendingTransition({
+              transitionName: transition.name,
+              startTime: transition.startTime,
+            });
+
+            addTransitionCompleteCallbackToPendingTransition({
+              transitionName: transition.name,
+              startTime: transition.startTime,
+            });
+          });
+
+          clearTransitionsForLanes(root, lanes);
+          state.transitions = null;
+        }
+      }
+    }
+  }
 
   // 根据不同tag commit更新
   if (flags & ContentReset) {

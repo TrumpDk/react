@@ -15,6 +15,11 @@ import type {StackCursor} from './ReactFiberStack.new';
 import type {Flags} from './ReactFiberFlags';
 import type {FunctionComponentUpdateQueue} from './ReactFiberHooks.new';
 import type {EventPriority} from './ReactEventPriorities.new';
+import type {
+  PendingTransitionCallbacks,
+  TransitionObject,
+  Transitions,
+} from './ReactFiberTracingMarkerComponent.new';
 
 import {
   warnAboutDeprecatedLifecycles,
@@ -30,9 +35,10 @@ import {
   enableSchedulingProfiler,
   disableSchedulerTimeoutInWorkLoop,
   enableStrictEffects,
+  skipUnmountedBoundaries,
   enableUpdaterTracking,
-  warnOnSubscriptionInsideStartTransition,
   enableCache,
+  enableTransitionTracing,
 } from 'shared/ReactFeatureFlags';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import is from 'shared/objectIs';
@@ -139,6 +145,8 @@ import {
   getHighestPriorityLane,
   addFiberToLanesMap,
   movePendingFibersToMemoized,
+  addTransitionToLanesMap,
+  getTransitionsForLanes,
 } from './ReactFiberLane.new';
 import {
   DiscreteEventPriority,
@@ -232,6 +240,7 @@ import {
   isLegacyActEnvironment,
   isConcurrentActEnvironment,
 } from './ReactFiberAct.new';
+import {processTransitionCallbacks} from './ReactFiberTracingMarkerComponent.new';
 
 const ceil = Math.ceil;
 
@@ -313,6 +322,51 @@ let workInProgressRootRenderTargetTime: number = Infinity;
 // How long a render is supposed to take before we start following CPU
 // suspense heuristics and opt out of rendering more content.
 const RENDER_TIMEOUT_MS = 500;
+
+let workInProgressTransitions: Transitions | null = null;
+export function getWorkInProgressTransitions() {
+  return workInProgressTransitions;
+}
+
+let currentPendingTransitionCallbacks: PendingTransitionCallbacks | null = null;
+
+export function addTransitionStartCallbackToPendingTransition(
+  transition: TransitionObject,
+) {
+  if (enableTransitionTracing) {
+    if (currentPendingTransitionCallbacks === null) {
+      currentPendingTransitionCallbacks = {
+        transitionStart: [],
+        transitionComplete: null,
+      };
+    }
+
+    if (currentPendingTransitionCallbacks.transitionStart === null) {
+      currentPendingTransitionCallbacks.transitionStart = [];
+    }
+
+    currentPendingTransitionCallbacks.transitionStart.push(transition);
+  }
+}
+
+export function addTransitionCompleteCallbackToPendingTransition(
+  transition: TransitionObject,
+) {
+  if (enableTransitionTracing) {
+    if (currentPendingTransitionCallbacks === null) {
+      currentPendingTransitionCallbacks = {
+        transitionStart: null,
+        transitionComplete: [],
+      };
+    }
+
+    if (currentPendingTransitionCallbacks.transitionComplete === null) {
+      currentPendingTransitionCallbacks.transitionComplete = [];
+    }
+
+    currentPendingTransitionCallbacks.transitionComplete.push(transition);
+  }
+}
 
 function resetRenderTimer() {
   workInProgressRootRenderTargetTime = now() + RENDER_TIMEOUT_MS;
@@ -397,11 +451,7 @@ export function requestUpdateLane(fiber: Fiber): Lane {
 
   const isTransition = requestCurrentTransition() !== NoTransition;
   if (isTransition) {
-    if (
-      __DEV__ &&
-      warnOnSubscriptionInsideStartTransition &&
-      ReactCurrentBatchConfig.transition !== null
-    ) {
+    if (__DEV__ && ReactCurrentBatchConfig.transition !== null) {
       const transition = ReactCurrentBatchConfig.transition;
       if (!transition._updatedFibers) {
         transition._updatedFibers = new Set();
@@ -523,6 +573,17 @@ export function scheduleUpdateOnFiber(
             current = current.return;
           }
         }
+      }
+    }
+
+    if (enableTransitionTracing) {
+      const transition = ReactCurrentBatchConfig.transition;
+      if (transition !== null) {
+        if (transition.startTime === -1) {
+          transition.startTime = now();
+        }
+
+        addTransitionToLanesMap(root, transition, lane);
       }
     }
 
@@ -1303,6 +1364,7 @@ export function getExecutionContext(): ExecutionContext {
 export function deferredUpdates<A>(fn: () => A): A {
   const previousPriority = getCurrentUpdatePriority();
   const prevTransition = ReactCurrentBatchConfig.transition;
+
   try {
     ReactCurrentBatchConfig.transition = null;
     setCurrentUpdatePriority(DefaultEventPriority);
@@ -1377,6 +1439,7 @@ export function flushSync(fn) {
 
   const prevTransition = ReactCurrentBatchConfig.transition;
   const previousPriority = getCurrentUpdatePriority();
+
   try {
     ReactCurrentBatchConfig.transition = null;
     setCurrentUpdatePriority(DiscreteEventPriority);
@@ -1388,6 +1451,7 @@ export function flushSync(fn) {
   } finally {
     setCurrentUpdatePriority(previousPriority);
     ReactCurrentBatchConfig.transition = prevTransition;
+
     executionContext = prevExecutionContext;
     // Flush the immediate callbacks that were scheduled during this batch.
     // Note that this will happen even if batchedUpdates is higher up
@@ -1687,6 +1751,7 @@ function renderRootSync(root: FiberRoot, lanes: Lanes) {
 
     // 准备新的栈
     // 创建新的 workinprogress 树 用来进行diff操作
+    workInProgressTransitions = getTransitionsForLanes(root, lanes);
     prepareFreshStack(root, lanes);
   }
 
@@ -1775,6 +1840,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes) {
       }
     }
 
+    workInProgressTransitions = getTransitionsForLanes(root, lanes);
     resetRenderTimer();
     // 开始处理alternate 此时 workInProgressRoot指向root
     prepareFreshStack(root, lanes);
@@ -1982,6 +2048,7 @@ function commitRoot(root: FiberRoot, recoverableErrors: null | Array<mixed>) {
   // layout phases. Should be able to remove.
   const previousUpdateLanePriority = getCurrentUpdatePriority();
   const prevTransition = ReactCurrentBatchConfig.transition;
+
   try {
     ReactCurrentBatchConfig.transition = null;
     setCurrentUpdatePriority(DiscreteEventPriority);
@@ -2348,6 +2415,27 @@ function commitRootImpl(
   // If layout work was scheduled, flush it now.
   flushSyncCallbacks();
 
+  if (enableTransitionTracing) {
+    const prevPendingTransitionCallbacks = currentPendingTransitionCallbacks;
+    const prevRootTransitionCallbacks = root.transitionCallbacks;
+    if (
+      prevPendingTransitionCallbacks !== null &&
+      prevRootTransitionCallbacks !== null
+    ) {
+      // TODO(luna) Refactor this code into the Host Config
+      const endTime = now();
+      currentPendingTransitionCallbacks = null;
+
+      scheduleCallback(IdleSchedulerPriority, () =>
+        processTransitionCallbacks(
+          prevPendingTransitionCallbacks,
+          endTime,
+          prevRootTransitionCallbacks,
+        ),
+      );
+    }
+  }
+
   if (__DEV__) {
     if (enableDebugTracing) {
       logCommitStopped();
@@ -2400,6 +2488,7 @@ export function flushPassiveEffects(): boolean {
     const priority = lowerEventPriority(DefaultEventPriority, renderPriority);
     const prevTransition = ReactCurrentBatchConfig.transition;
     const previousPriority = getCurrentUpdatePriority();
+
     try {
       ReactCurrentBatchConfig.transition = null;
       setCurrentUpdatePriority(priority);
@@ -2558,7 +2647,13 @@ export function captureCommitPhaseError(
     return;
   }
 
-  let fiber = nearestMountedAncestor;
+  let fiber = null;
+  if (skipUnmountedBoundaries) {
+    fiber = nearestMountedAncestor;
+  } else {
+    fiber = sourceFiber.return;
+  }
+
   while (fiber !== null) {
     if (fiber.tag === HostRoot) {
       captureCommitPhaseErrorOnRoot(fiber, sourceFiber, error);
@@ -2591,9 +2686,14 @@ export function captureCommitPhaseError(
   }
 
   if (__DEV__) {
+    // TODO: Until we re-land skipUnmountedBoundaries (see #20147), this warning
+    // will fire for errors that are thrown by destroy functions inside deleted
+    // trees. What it should instead do is propagate the error to the parent of
+    // the deleted tree. In the meantime, do not add this warning to the
+    // allowlist; this is only for our internal use.
     console.error(
       'Internal React error: Attempted to capture a commit phase error ' +
-        'inside a detached tree. This indicates a bug in React. Potential ' +
+        'inside a detached tree. This indicates a bug in React. Likely ' +
         'causes include deleting the same fiber more than once, committing an ' +
         'already-finished tree, or an inconsistent return pointer.\n\n' +
         'Error message:\n\n%s',

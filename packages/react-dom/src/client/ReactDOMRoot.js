@@ -15,6 +15,7 @@ import type {
 } from 'react-reconciler/src/ReactInternalTypes';
 
 import {queueExplicitHydrationTarget} from '../events/ReactDOMEventReplaying';
+import {REACT_ELEMENT_TYPE} from 'shared/ReactSymbols';
 
 export type RootType = {
   render(children: ReactNodeList): void,
@@ -103,7 +104,18 @@ ReactDOMHydrationRoot.prototype.render = ReactDOMRoot.prototype.render = functio
         'render(...): does not support the second callback argument. ' +
           'To execute a side effect after rendering, declare it in a component body with useEffect().',
       );
+    } else if (isValidContainer(arguments[1])) {
+      console.error(
+        'You passed a container to the second argument of root.render(...). ' +
+          "You don't need to pass it again since you already passed it to create the root.",
+      );
+    } else if (typeof arguments[1] !== 'undefined') {
+      console.error(
+        'You passed a second argument to root.render(...) but it only accepts ' +
+          'one argument.',
+      );
     }
+
     const container = root.containerInfo;
 
     if (container.nodeType !== COMMENT_NODE) {
@@ -172,8 +184,22 @@ export function createRoot(
     if (__DEV__) {
       if ((options: any).hydrate) {
         console.warn(
-          'hydrate through createRoot is deprecated. Use ReactDOM.hydrateRoot(container, <App />) instead.',
+          'hydrate through createRoot is deprecated. Use ReactDOMClient.hydrateRoot(container, <App />) instead.',
         );
+      } else {
+        if (
+          typeof options === 'object' &&
+          options !== null &&
+          (options: any).$$typeof === REACT_ELEMENT_TYPE
+        ) {
+          console.error(
+            'You passed a JSX element to createRoot. You probably meant to ' +
+              'call root.render instead. ' +
+              'Example usage:\n\n' +
+              '  let root = createRoot(domContainer);\n' +
+              '  root.render(<App />);',
+          );
+        }
       }
     }
     if (options.unstable_strictMode === true) {
@@ -236,6 +262,15 @@ export function hydrateRoot(
   }
 
   warnIfReactDOMContainerInDEV(container);
+
+  if (__DEV__) {
+    if (initialChildren === undefined) {
+      console.error(
+        'Must provide initial children as second argument to hydrateRoot. ' +
+          'Example usage: hydrateRoot(domContainer, <App />)',
+      );
+    }
+  }
 
   // For now we reuse the whole bag of options since they contain
   // the hydration callbacks.
@@ -334,12 +369,12 @@ function warnIfReactDOMContainerInDEV(container) {
     if (isContainerMarkedAsRoot(container)) {
       if (container._reactRootContainer) {
         console.error(
-          'You are calling ReactDOM.createRoot() on a container that was previously ' +
+          'You are calling ReactDOMClient.createRoot() on a container that was previously ' +
             'passed to ReactDOM.render(). This is not supported.',
         );
       } else {
         console.error(
-          'You are calling ReactDOM.createRoot() on a container that ' +
+          'You are calling ReactDOMClient.createRoot() on a container that ' +
             'has already been passed to createRoot() before. Instead, call ' +
             'root.render() on the existing root instead if you want to update it.',
         );
