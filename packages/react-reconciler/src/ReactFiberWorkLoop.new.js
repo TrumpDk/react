@@ -830,6 +830,15 @@ function ensureRootIsScheduled(root: FiberRoot, currentTime: number) {
         schedulerPriorityLevel = NormalSchedulerPriority;
         break;
     }
+    // 返回的是unstable_scheduledCallback生成的task
+    // var newTask = {
+    //   id: taskIdCounter++,
+    //   callback,
+    //   priorityLevel,
+    //   startTime,
+    //   expirationTime,
+    //   sortIndex: -1,
+    // };
     newCallbackNode = scheduleCallback(
       schedulerPriorityLevel,
       performConcurrentWorkOnRoot.bind(null, root),

@@ -189,11 +189,14 @@ function flushWork(hasTimeRemaining, initialTime) {
 function workLoop(hasTimeRemaining, initialTime) {
   let currentTime = initialTime;
   advanceTimers(currentTime);
+  // for concurrent Mode taskQueue = performConcurrentWorkOnRoot(null root);
+  // for lagacy and
   currentTask = peek(taskQueue);
   while (
     currentTask !== null &&
     !(enableSchedulerDebugging && isSchedulerPaused)
   ) {
+    // 任务时间还没到超时并且符合让出线程条件
     if (
       currentTask.expirationTime > currentTime &&
       (!hasTimeRemaining || shouldYieldToHost())
@@ -304,7 +307,9 @@ function unstable_wrapCallback(callback) {
     }
   };
 }
-
+// 当从update container进来的时候callback就能够是flushSyncCallbacks或者
+// performConcurrentWorkOnRoot。至于其它条件下引发的更新还没看
+//                                 调度器优先级， 同步、异步更新任务
 function unstable_scheduleCallback(priorityLevel, callback, options) {
   // 获取当前时间
   var currentTime = getCurrentTime();
@@ -534,6 +539,8 @@ const performWorkUntilDeadline = () => {
     // `hasMoreWork` will remain true, and we'll continue the work loop.
     let hasMoreWork = true;
     try {
+      // actually scheduledHostCallback here do refers to workloop function
+      // hasMoreWork = workLoop(hasTimeRemaining, currentTime);
       hasMoreWork = scheduledHostCallback(hasTimeRemaining, currentTime);
     } finally {
       if (hasMoreWork) {

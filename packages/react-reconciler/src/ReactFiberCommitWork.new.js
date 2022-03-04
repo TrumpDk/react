@@ -726,7 +726,6 @@ function commitLayoutEffectOnFiber(
             try {
               startLayoutEffectTimer();
               // 触发hooks
-              // 通过updateQueue 调用hooks
               commitHookEffectListMount(
                 HookLayout | HookHasEffect,
                 finishedWork,
@@ -2405,7 +2404,7 @@ function commitLayoutEffects_begin(
   const isModernRoot = (subtreeRoot.mode & ConcurrentMode) !== NoMode;
 
   while (nextEffect !== null) {
-    // 相同的套路
+    // 相同的套路 dfs遍历
     const fiber = nextEffect;
     const firstChild = fiber.child;
 
@@ -2497,7 +2496,7 @@ function commitLayoutMountEffects_complete(
       return;
     }
 
-    // 先兄弟 后父亲
+    // 保证父子节点顺序是正确的
     const sibling = fiber.sibling;
     if (sibling !== null) {
       ensureCorrectReturnPointer(sibling, fiber.return);

@@ -162,8 +162,11 @@ if (__DEV__) {
 
 export function initializeUpdateQueue<State>(fiber: Fiber): void {
   const queue: UpdateQueue<State> = {
+    // 前一次更新计算出来的状态
     baseState: fiber.memoizedState,
+    // 前一次更新时udpateQueue中第一个被跳过的update对象
     firstBaseUpdate: null,
+    // 前一次更新时udpateQueue中第一个被跳过的update对象往后面走的最后一个跳过的update对象
     lastBaseUpdate: null,
     shared: {
       pending: null,
@@ -196,13 +199,18 @@ export function cloneUpdateQueue<State>(
 
 export function createUpdate(eventTime: number, lane: Lane): Update<*> {
   const update: Update<*> = {
+    // 更新发生的时间
     eventTime,
+    // 分配的优先级
     lane,
 
+    // 表示更行类型 如 UpdateState，ReplaceState，ForceUpdate，CaptureUpdate
     tag: UpdateState,
+    // 载荷
     payload: null,
     callback: null,
 
+    // 指向下一个update的指针
     next: null,
   };
   return update;
