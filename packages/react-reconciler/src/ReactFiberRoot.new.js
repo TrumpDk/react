@@ -7,6 +7,7 @@
  * @flow
  */
 
+import type {ReactNodeList} from 'shared/ReactTypes';
 import type {
   FiberRoot,
   SuspenseHydrationCallbacks,
@@ -14,7 +15,6 @@ import type {
 } from './ReactInternalTypes';
 import type {RootTag} from './ReactRootTags';
 import type {Cache} from './ReactFiberCacheComponent.new';
-import type {Transitions} from './ReactFiberTracingMarkerComponent.new';
 
 import {noTimeout, supportsHydration} from './ReactFiberHostConfig';
 import {createHostRootFiber} from './ReactFiber.new';
@@ -33,14 +33,14 @@ import {
   enableUpdaterTracking,
   enableTransitionTracing,
 } from 'shared/ReactFeatureFlags';
-import {initializeUpdateQueue} from './ReactUpdateQueue.new';
+import {initializeUpdateQueue} from './ReactFiberClassUpdateQueue.new';
 import {LegacyRoot, ConcurrentRoot} from './ReactRootTags';
 import {createCache, retainCache} from './ReactFiberCacheComponent.new';
 
 export type RootState = {
   element: any,
-  cache: Cache | null,
-  transitions: Transitions | null,
+  isDehydrated: boolean,
+  cache: Cache,
 };
 
 function FiberRootNode(
@@ -59,7 +59,6 @@ function FiberRootNode(
   this.timeoutHandle = noTimeout;
   this.context = null;
   this.pendingContext = null;
-  this.isDehydrated = hydrate;
   this.callbackNode = null;
   this.callbackPriority = NoLane;
   this.eventTimes = createLaneMap(NoLanes);
@@ -74,6 +73,8 @@ function FiberRootNode(
 
   this.entangledLanes = NoLanes;
   this.entanglements = createLaneMap(NoLanes);
+
+  this.hiddenUpdates = createLaneMap(null);
 
   this.identifierPrefix = identifierPrefix;
   this.onRecoverableError = onRecoverableError;
@@ -91,6 +92,7 @@ function FiberRootNode(
     this.hydrationCallbacks = null;
   }
 
+  this.incompleteTransitions = new Map();
   if (enableTransitionTracing) {
     this.transitionCallbacks = null;
     const transitionLanesMap = (this.transitionLanes = []);
@@ -128,6 +130,7 @@ export function createFiberRoot(
   containerInfo: any,
   tag: RootTag,
   hydrate: boolean,
+  initialChildren: ReactNodeList,
   hydrationCallbacks: null | SuspenseHydrationCallbacks,
   isStrictMode: boolean,
   concurrentUpdatesByDefaultOverride: null | boolean,
@@ -178,16 +181,16 @@ export function createFiberRoot(
     root.pooledCache = initialCache;
     retainCache(initialCache);
     const initialState: RootState = {
-      element: null,
+      element: initialChildren,
+      isDehydrated: hydrate,
       cache: initialCache,
-      transitions: null,
     };
     uninitializedFiber.memoizedState = initialState;
   } else {
     const initialState: RootState = {
-      element: null,
-      cache: null,
-      transitions: null,
+      element: initialChildren,
+      isDehydrated: hydrate,
+      cache: (null: any), // not enabled yet
     };
     uninitializedFiber.memoizedState = initialState;
   }

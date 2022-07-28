@@ -15,6 +15,7 @@
  */
 
 import type {ReactModel} from 'react-server/src/ReactFlightServer';
+import type {ServerContextJSONValue} from 'shared/ReactTypes';
 
 import {saveModule} from 'react-noop-renderer/flight-modules';
 
@@ -60,6 +61,8 @@ const ReactNoopFlightServer = ReactFlightServer({
 
 type Options = {
   onError?: (error: mixed) => void,
+  context?: Array<[string, ServerContextJSONValue]>,
+  identifierPrefix?: string,
 };
 
 function render(model: ReactModel, options?: Options): Destination {
@@ -69,6 +72,8 @@ function render(model: ReactModel, options?: Options): Destination {
     model,
     bundlerConfig,
     options ? options.onError : undefined,
+    options ? options.context : undefined,
+    options ? options.identifierPrefix : undefined,
   );
   ReactNoopFlightServer.startWork(request);
   ReactNoopFlightServer.startFlowing(request, destination);

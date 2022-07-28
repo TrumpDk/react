@@ -16,6 +16,7 @@ import type {
   MutableSourceVersion,
   MutableSource,
   StartTransitionOptions,
+  Wakeable,
 } from 'shared/ReactTypes';
 import type {SuspenseInstance} from './ReactFiberHostConfig';
 import type {WorkTag} from './ReactWorkTags';
@@ -24,9 +25,14 @@ import type {Flags} from './ReactFiberFlags';
 import type {Lane, Lanes, LaneMap} from './ReactFiberLane.old';
 import type {RootTag} from './ReactRootTags';
 import type {TimeoutHandle, NoTimeout} from './ReactFiberHostConfig';
-import type {Wakeable} from 'shared/ReactTypes';
 import type {Cache} from './ReactFiberCacheComponent.old';
-import type {Transitions} from './ReactFiberTracingMarkerComponent.new';
+// Doing this because there's a merge conflict because of the way sync-reconciler-fork
+// is implemented
+import type {
+  TracingMarkerInstance,
+  Transition,
+} from './ReactFiberTracingMarkerComponent.new';
+import type {ConcurrentUpdate} from './ReactFiberConcurrentUpdates.new';
 
 // Unwind Circular: moved from ReactFiberHooks.old
 export type HookType =
@@ -213,8 +219,6 @@ type BaseFiberRootProperties = {|
   // Top context object, used by renderSubtreeIntoContainer
   context: Object | null,
   pendingContext: Object | null,
-  // Determines if we should attempt to hydrate on the initial mount
-  +isDehydrated: boolean,
 
   // Used by useMutableSource hook to avoid tearing during hydration.
   mutableSourceEagerHydrationData?: Array<
@@ -227,6 +231,7 @@ type BaseFiberRootProperties = {|
   callbackPriority: Lane,
   eventTimes: LaneMap<number>,
   expirationTimes: LaneMap<number>,
+  hiddenUpdates: LaneMap<Array<ConcurrentUpdate> | null>,
 
   pendingLanes: Lanes,
   suspendedLanes: Lanes,
@@ -249,7 +254,10 @@ type BaseFiberRootProperties = {|
   // a reference to.
   identifierPrefix: string,
 
-  onRecoverableError: (error: mixed) => void,
+  onRecoverableError: (
+    error: mixed,
+    errorInfo: {digest?: ?string, componentStack?: ?string},
+  ) => void,
 |};
 
 // The following attributes are only used by DevTools and are only present in DEV builds.
@@ -322,7 +330,14 @@ export type TransitionTracingCallbacks = {
 // The following fields are only used in transition tracing in Profile builds
 type TransitionTracingOnlyFiberRootProperties = {|
   transitionCallbacks: null | TransitionTracingCallbacks,
-  transitionLanes: Array<Transitions>,
+  transitionLanes: Array<Set<Transition> | null>,
+  // Transitions on the root can be represented as a bunch of tracing markers.
+  // Each entangled group of transitions can be treated as a tracing marker.
+  // It will have a set of pending suspense boundaries. These transitions
+  // are considered complete when the pending suspense boundaries set is
+  // empty. We can represent this as a Map of transitions to suspense
+  // boundary sets
+  incompleteTransitions: Map<Array<Transition>, TracingMarkerInstance>,
 |};
 
 // Exported FiberRoot type includes all properties,

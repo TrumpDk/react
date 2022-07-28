@@ -30,6 +30,7 @@ import {
 import {
   deletePathInObject,
   getDisplayName,
+  getWrappedDisplayName,
   getDefaultComponentFilters,
   getInObject,
   getUID,
@@ -85,6 +86,7 @@ import {
   FORWARD_REF_SYMBOL_STRING,
   MEMO_NUMBER,
   MEMO_SYMBOL_STRING,
+  SERVER_CONTEXT_SYMBOL_STRING,
 } from './ReactSymbols';
 import {format} from './utils';
 import {
@@ -92,7 +94,6 @@ import {
   enableStyleXFeatures,
 } from 'react-devtools-feature-flags';
 import is from 'shared/objectIs';
-import isArray from 'shared/isArray';
 import hasOwnProperty from 'shared/hasOwnProperty';
 import {getStyleXData} from './StyleX/utils';
 import {createProfilingHooks} from './profilingHooks';
@@ -451,10 +452,11 @@ export function getInternalReactConstants(
       case IndeterminateComponent:
         return getDisplayName(resolvedType);
       case ForwardRef:
-        // Mirror https://github.com/facebook/react/blob/7c21bf72ace77094fd1910cc350a548287ef8350/packages/shared/getComponentName.js#L27-L37
-        return (
-          (type && type.displayName) ||
-          getDisplayName(resolvedType, 'Anonymous')
+        return getWrappedDisplayName(
+          elementType,
+          resolvedType,
+          'ForwardRef',
+          'Anonymous',
         );
       case HostRoot:
         const fiberRoot = fiber.stateNode;
@@ -475,10 +477,12 @@ export function getInternalReactConstants(
         return 'Lazy';
       case MemoComponent:
       case SimpleMemoComponent:
-        return (
-          (elementType && elementType.displayName) ||
-          (type && type.displayName) ||
-          getDisplayName(resolvedType, 'Anonymous')
+        // Display name in React does not use `Memo` as a wrapper but fallback name.
+        return getWrappedDisplayName(
+          elementType,
+          resolvedType,
+          'Memo',
+          'Anonymous',
         );
       case SuspenseComponent:
         return 'Suspense';
@@ -511,6 +515,7 @@ export function getInternalReactConstants(
             return `${resolvedContext.displayName || 'Context'}.Provider`;
           case CONTEXT_NUMBER:
           case CONTEXT_SYMBOL_STRING:
+          case SERVER_CONTEXT_SYMBOL_STRING:
             // 16.3-16.5 read from "type" because the Consumer is the actual context object.
             // 16.6+ should read from "type._context" because Consumer can be different (in DEV).
             // NOTE Keep in sync with inspectElementRaw()
@@ -545,6 +550,17 @@ export function getInternalReactConstants(
     StrictModeBits,
   };
 }
+
+// Map of one or more Fibers in a pair to their unique id number.
+// We track both Fibers to support Fast Refresh,
+// which may forcefully replace one of the pair as part of hot reloading.
+// In that case it's still important to be able to locate the previous ID during subsequent renders.
+const fiberToIDMap: Map<Fiber, number> = new Map();
+
+// Map of id to one (arbitrary) Fiber in a pair.
+// This Map is used to e.g. get the display name for a Fiber or schedule an update,
+// operations that should be the same whether the current and work-in-progress Fiber is used.
+const idToArbitraryFiberMap: Map<number, Fiber> = new Map();
 
 export function attach(
   hook: DevToolsHook,
@@ -648,6 +664,8 @@ export function attach(
       getDisplayNameForFiber,
       getIsProfiling: () => isProfiling,
       getLaneLabelMap,
+      currentDispatcherRef: renderer.currentDispatcherRef,
+      workTagMap: ReactTypeOfWork,
       reactVersion: version,
     });
 
@@ -1083,17 +1101,6 @@ export function attach(
     }
   }
 
-  // Map of one or more Fibers in a pair to their unique id number.
-  // We track both Fibers to support Fast Refresh,
-  // which may forcefully replace one of the pair as part of hot reloading.
-  // In that case it's still important to be able to locate the previous ID during subsequent renders.
-  const fiberToIDMap: Map<Fiber, number> = new Map();
-
-  // Map of id to one (arbitrary) Fiber in a pair.
-  // This Map is used to e.g. get the display name for a Fiber or schedule an update,
-  // operations that should be the same whether the current and work-in-progress Fiber is used.
-  const idToArbitraryFiberMap: Map<number, Fiber> = new Map();
-
   // When profiling is supported, we store the latest tree base durations for each Fiber.
   // This is so that we can quickly capture a snapshot of those values if profiling starts.
   // If we didn't store these values, we'd have to crawl the tree when profiling started,
@@ -1442,50 +1449,41 @@ export function attach(
     return null;
   }
 
-  function areHookInputsEqual(
-    nextDeps: Array<mixed>,
-    prevDeps: Array<mixed> | null,
-  ) {
-    if (prevDeps === null) {
+  function isHookThatCanScheduleUpdate(hookObject: any) {
+    const queue = hookObject.queue;
+    if (!queue) {
       return false;
     }
 
-    for (let i = 0; i < prevDeps.length && i < nextDeps.length; i++) {
-      if (is(nextDeps[i], prevDeps[i])) {
-        continue;
-      }
-      return false;
-    }
-    return true;
+    const boundHasOwnProperty = hasOwnProperty.bind(queue);
+
+    // Detect the shape of useState() or useReducer()
+    // using the attributes that are unique to these hooks
+    // but also stable (e.g. not tied to current Lanes implementation)
+    const isStateOrReducer =
+      boundHasOwnProperty('pending') &&
+      boundHasOwnProperty('dispatch') &&
+      typeof queue.dispatch === 'function';
+
+    // Detect useSyncExternalStore()
+    const isSyncExternalStore =
+      boundHasOwnProperty('value') &&
+      boundHasOwnProperty('getSnapshot') &&
+      typeof queue.getSnapshot === 'function';
+
+    // These are the only types of hooks that can schedule an update.
+    return isStateOrReducer || isSyncExternalStore;
   }
 
-  function isEffect(memoizedState) {
-    if (memoizedState === null || typeof memoizedState !== 'object') {
-      return false;
-    }
-    const {deps} = memoizedState;
-    const boundHasOwnProperty = hasOwnProperty.bind(memoizedState);
-    return (
-      boundHasOwnProperty('create') &&
-      boundHasOwnProperty('destroy') &&
-      boundHasOwnProperty('deps') &&
-      boundHasOwnProperty('next') &&
-      boundHasOwnProperty('tag') &&
-      (deps === null || isArray(deps))
-    );
-  }
-
-  function didHookChange(prev: any, next: any): boolean {
+  function didStatefulHookChange(prev: any, next: any): boolean {
     const prevMemoizedState = prev.memoizedState;
     const nextMemoizedState = next.memoizedState;
 
-    if (isEffect(prevMemoizedState) && isEffect(nextMemoizedState)) {
-      return (
-        prevMemoizedState !== nextMemoizedState &&
-        !areHookInputsEqual(nextMemoizedState.deps, prevMemoizedState.deps)
-      );
+    if (isHookThatCanScheduleUpdate(prev)) {
+      return prevMemoizedState !== nextMemoizedState;
     }
-    return nextMemoizedState !== prevMemoizedState;
+
+    return false;
   }
 
   function didHooksChange(prev: any, next: any): boolean {
@@ -1501,7 +1499,7 @@ export function attach(
       next.hasOwnProperty('queue')
     ) {
       while (next !== null) {
-        if (didHookChange(prev, next)) {
+        if (didStatefulHookChange(prev, next)) {
           return true;
         } else {
           next = next.next;
@@ -1528,7 +1526,7 @@ export function attach(
         next.hasOwnProperty('queue')
       ) {
         while (next !== null) {
-          if (didHookChange(prev, next)) {
+          if (didStatefulHookChange(prev, next)) {
             indices.push(index);
           }
           next = next.next;
@@ -1578,6 +1576,7 @@ export function attach(
       case ContextConsumer:
       case MemoComponent:
       case SimpleMemoComponent:
+      case ForwardRef:
         // For types that execute user code, we check PerformedWork effect.
         // We don't reflect bailouts (either referential or sCU) in DevTools.
         // eslint-disable-next-line no-bitwise
@@ -1622,18 +1621,27 @@ export function attach(
     pendingOperations.push(op);
   }
 
-  function flushOrQueueOperations(operations: OperationsArray): void {
-    if (operations.length === 3) {
-      // This operations array is a no op: [renderer ID, root ID, string table size (0)]
-      // We can usually skip sending updates like this across the bridge, unless we're Profiling.
-      // In that case, even though the tree didn't change– some Fibers may have still rendered.
+  function shouldBailoutWithPendingOperations() {
+    if (isProfiling) {
       if (
-        !isProfiling ||
-        currentCommitProfilingMetadata == null ||
-        currentCommitProfilingMetadata.durations.length === 0
+        currentCommitProfilingMetadata != null &&
+        currentCommitProfilingMetadata.durations.length > 0
       ) {
-        return;
+        return false;
       }
+    }
+
+    return (
+      pendingOperations.length === 0 &&
+      pendingRealUnmountedIDs.length === 0 &&
+      pendingSimulatedUnmountedIDs.length === 0 &&
+      pendingUnmountedRootID === null
+    );
+  }
+
+  function flushOrQueueOperations(operations: OperationsArray): void {
+    if (shouldBailoutWithPendingOperations()) {
+      return;
     }
 
     if (pendingOperationsQueue !== null) {
@@ -1666,7 +1674,7 @@ export function attach(
 
       recordPendingErrorsAndWarnings();
 
-      if (pendingOperations.length === 0) {
+      if (shouldBailoutWithPendingOperations()) {
         // No warnings or errors to flush; we can bail out early here too.
         return;
       }
@@ -1789,12 +1797,7 @@ export function attach(
     // We do this just before flushing, so we can ignore errors for no-longer-mounted Fibers.
     recordPendingErrorsAndWarnings();
 
-    if (
-      pendingOperations.length === 0 &&
-      pendingRealUnmountedIDs.length === 0 &&
-      pendingSimulatedUnmountedIDs.length === 0 &&
-      pendingUnmountedRootID === null
-    ) {
+    if (shouldBailoutWithPendingOperations()) {
       // If we aren't profiling, we can just bail out here.
       // No use sending an empty update over the bridge.
       //
@@ -1803,9 +1806,7 @@ export function attach(
       // (2) the operations array for each commit
       // Because of this, it's important that the operations and metadata arrays align,
       // So it's important not to omit even empty operations while profiling is active.
-      if (!isProfiling) {
-        return;
-      }
+      return;
     }
 
     const numUnmountIDs =
@@ -2635,10 +2636,15 @@ export function attach(
   }
 
   function handleCommitFiberUnmount(fiber) {
-    // This is not recursive.
-    // We can't traverse fibers after unmounting so instead
-    // we rely on React telling us about each unmount.
-    recordUnmount(fiber, false);
+    // If the untrackFiberSet already has the unmounted Fiber, this means we've already
+    // recordedUnmount, so we don't need to do it again. If we don't do this, we might
+    // end up double-deleting Fibers in some cases (like Legacy Suspense).
+    if (!untrackFibersSet.has(fiber)) {
+      // This is not recursive.
+      // We can't traverse fibers after unmounting so instead
+      // we rely on React telling us about each unmount.
+      recordUnmount(fiber, false);
+    }
   }
 
   function handlePostCommitFiberRoot(root) {
@@ -2700,9 +2706,14 @@ export function attach(
       // TODO: relying on this seems a bit fishy.
       const wasMounted =
         alternate.memoizedState != null &&
-        alternate.memoizedState.element != null;
+        alternate.memoizedState.element != null &&
+        // A dehydrated root is not considered mounted
+        alternate.memoizedState.isDehydrated !== true;
       const isMounted =
-        current.memoizedState != null && current.memoizedState.element != null;
+        current.memoizedState != null &&
+        current.memoizedState.element != null &&
+        // A dehydrated root is not considered mounted
+        current.memoizedState.isDehydrated !== true;
       if (!wasMounted && isMounted) {
         // Mount a new root.
         setRootPseudoKey(currentRootID, current);
@@ -2722,12 +2733,7 @@ export function attach(
     }
 
     if (isProfiling && isProfilingSupported) {
-      // Make sure at least one Fiber performed work during this commit.
-      // If not, don't send it to the frontend; showing an empty commit in the Profiler is confusing.
-      if (
-        currentCommitProfilingMetadata != null &&
-        currentCommitProfilingMetadata.durations.length > 0
-      ) {
+      if (!shouldBailoutWithPendingOperations()) {
         const commitProfilingMetadata = ((rootToCommitProfilingMetadataMap: any): CommitProfilingMetadataMap).get(
           currentRootID,
         );
@@ -2817,6 +2823,10 @@ export function attach(
   function getDisplayNameForFiberID(id) {
     const fiber = idToArbitraryFiberMap.get(id);
     return fiber != null ? getDisplayNameForFiber(((fiber: any): Fiber)) : null;
+  }
+
+  function getFiberForNative(hostInstance) {
+    return renderer.findFiberByHostInstance(hostInstance);
   }
 
   function getFiberIDForNative(
@@ -3612,10 +3622,58 @@ export function attach(
     try {
       mostRecentlyInspectedElement = inspectElementRaw(id);
     } catch (error) {
+      // the error name is synced with ReactDebugHooks
+      if (error.name === 'ReactDebugToolsRenderError') {
+        let message = 'Error rendering inspected element.';
+        let stack;
+        // Log error & cause for user to debug
+        console.error(message + '\n\n', error);
+        if (error.cause != null) {
+          const fiber = findCurrentFiberUsingSlowPathById(id);
+          const componentName =
+            fiber != null ? getDisplayNameForFiber(fiber) : null;
+          console.error(
+            'React DevTools encountered an error while trying to inspect hooks. ' +
+              'This is most likely caused by an error in current inspected component' +
+              (componentName != null ? `: "${componentName}".` : '.') +
+              '\nThe error thrown in the component is: \n\n',
+            error.cause,
+          );
+          if (error.cause instanceof Error) {
+            message = error.cause.message || message;
+            stack = error.cause.stack;
+          }
+        }
+
+        return {
+          type: 'error',
+          errorType: 'user',
+          id,
+          responseID: requestID,
+          message,
+          stack,
+        };
+      }
+
+      // the error name is synced with ReactDebugHooks
+      if (error.name === 'ReactDebugToolsUnsupportedHookError') {
+        return {
+          type: 'error',
+          errorType: 'unknown-hook',
+          id,
+          responseID: requestID,
+          message:
+            'Unsupported hook in the react-debug-tools package: ' +
+            error.message,
+        };
+      }
+
+      // Log Uncaught Error
       console.error('Error inspecting element.\n\n', error);
 
       return {
         type: 'error',
+        errorType: 'uncaught',
         id,
         responseID: requestID,
         message: error.message,
@@ -4443,6 +4501,7 @@ export function attach(
     flushInitialOperations,
     getBestMatchForTrackedPath,
     getDisplayNameForFiberID,
+    getFiberForNative,
     getFiberIDForNative,
     getInstanceAndStyle,
     getOwnersList,

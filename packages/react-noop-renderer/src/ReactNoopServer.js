@@ -98,12 +98,18 @@ const ReactNoopServer = ReactFizzServer({
     return null;
   },
 
-  pushTextInstance(target: Array<Uint8Array>, text: string): void {
+  pushTextInstance(
+    target: Array<Uint8Array>,
+    text: string,
+    responseState: ResponseState,
+    textEmbedded: boolean,
+  ): boolean {
     const textInstance: TextInstance = {
       text,
       hidden: false,
     };
     target.push(Buffer.from(JSON.stringify(textInstance), 'utf8'), POP);
+    return false;
   },
   pushStartInstance(
     target: Array<Uint8Array>,
@@ -127,6 +133,14 @@ const ReactNoopServer = ReactFizzServer({
   ): void {
     target.push(POP);
   },
+
+  // This is a noop in ReactNoop
+  pushSegmentFinale(
+    target: Array<Uint8Array>,
+    responseState: ResponseState,
+    lastPushedText: boolean,
+    textEmbedded: boolean,
+  ): void {},
 
   writeCompletedRoot(
     destination: Destination,
@@ -251,9 +265,9 @@ const ReactNoopServer = ReactFizzServer({
 
 type Options = {
   progressiveChunkSize?: number,
-  onCompleteShell?: () => void,
-  onCompleteAll?: () => void,
-  onError?: (error: mixed) => void,
+  onShellReady?: () => void,
+  onAllReady?: () => void,
+  onError?: (error: mixed) => ?string,
 };
 
 function render(children: React$Element<any>, options?: Options): Destination {
@@ -272,8 +286,8 @@ function render(children: React$Element<any>, options?: Options): Destination {
     null,
     options ? options.progressiveChunkSize : undefined,
     options ? options.onError : undefined,
-    options ? options.onCompleteAll : undefined,
-    options ? options.onCompleteShell : undefined,
+    options ? options.onAllReady : undefined,
+    options ? options.onShellReady : undefined,
   );
   ReactNoopServer.startWork(request);
   ReactNoopServer.startFlowing(request, destination);

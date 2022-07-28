@@ -32,7 +32,7 @@ type Options = {|
   bootstrapModules?: Array<string>,
   progressiveChunkSize?: number,
   signal?: AbortSignal,
-  onError?: (error: mixed) => void,
+  onError?: (error: mixed) => ?string,
 |};
 
 // TODO: Move to sub-classing ReadableStream.
@@ -46,25 +46,35 @@ function renderToReadableStream(
 ): Promise<ReactDOMServerReadableStream> {
   return new Promise((resolve, reject) => {
     let onFatalError;
-    let onCompleteAll;
+    let onAllReady;
     const allReady = new Promise((res, rej) => {
-      onCompleteAll = res;
+      onAllReady = res;
       onFatalError = rej;
     });
 
-    function onCompleteShell() {
-      const stream: ReactDOMServerReadableStream = (new ReadableStream({
-        type: 'bytes',
-        pull(controller) {
-          startFlowing(request, controller);
+    function onShellReady() {
+      const stream: ReactDOMServerReadableStream = (new ReadableStream(
+        {
+          type: 'bytes',
+          pull(controller) {
+            startFlowing(request, controller);
+          },
+          cancel(reason) {
+            abort(request);
+          },
         },
-        cancel(reason) {},
-      }): any);
+        // $FlowFixMe size() methods are not allowed on byte streams.
+        {highWaterMark: 0},
+      ): any);
       // TODO: Move to sub-classing ReadableStream.
       stream.allReady = allReady;
       resolve(stream);
     }
-    function onErrorShell(error: mixed) {
+    function onShellError(error: mixed) {
+      // If the shell errors the caller of `renderToReadableStream` won't have access to `allReady`.
+      // However, `allReady` will be rejected by `onFatalError` as well.
+      // So we need to catch the duplicate, uncatchable fatal error in `allReady` to prevent a `UnhandledPromiseRejection`.
+      allReady.catch(() => {});
       reject(error);
     }
     const request = createRequest(
@@ -79,18 +89,22 @@ function renderToReadableStream(
       createRootFormatContext(options ? options.namespaceURI : undefined),
       options ? options.progressiveChunkSize : undefined,
       options ? options.onError : undefined,
-      onCompleteAll,
-      onCompleteShell,
-      onErrorShell,
+      onAllReady,
+      onShellReady,
+      onShellError,
       onFatalError,
     );
     if (options && options.signal) {
       const signal = options.signal;
-      const listener = () => {
-        abort(request);
-        signal.removeEventListener('abort', listener);
-      };
-      signal.addEventListener('abort', listener);
+      if (signal.aborted) {
+        abort(request, (signal: any).reason);
+      } else {
+        const listener = () => {
+          abort(request, (signal: any).reason);
+          signal.removeEventListener('abort', listener);
+        };
+        signal.addEventListener('abort', listener);
+      }
     }
     startWork(request);
   });

@@ -4,14 +4,92 @@
 
 ---
 
+### 4.25.0
+July 13, 2022
+
+* Timeline Profiler Sidebar with component tree ([lunaruan](https://github.com/lunaruan) and [blakef](https://github.com/blakef) in [#24816](https://github.com/facebook/react/pull/24816), [#24815](https://github.com/facebook/react/pull/24815), [#24814](https://github.com/facebook/react/pull/24814), [#24805](https://github.com/facebook/react/pull/24805), [#24776](https://github.com/facebook/react/pull/24776))
+* [DevTools][Bugfix] Fix DevTools Perf Issue When Unmounting Large React Subtrees ([lunaruan](https://github.com/lunaruan) in [#24863](https://github.com/facebook/react/pull/24863))
+* Enable "reload & profile" button for timeline view ([mondaychen](https://github.com/mondaychen) in [#24702](https://github.com/facebook/react/pull/24702))
+* Find best renderer when inspecting app with mutilple react roots ([mondaychen](https://github.com/mondaychen) in [#24665](https://github.com/facebook/react/pull/24665))
+* Only polyfill requestAnimationFrame when necessary ([mondaychen](https://github.com/mondaychen) in [#24651](https://github.com/facebook/react/pull/24651))
+
+---
+
+### 4.24.7
+May 31, 2022
+
+* mock requestAnimationFrame with setTimeout as a temporary fix for #24626 ([mondaychen](https://github.com/mondaychen) in [#24633](https://github.com/facebook/react/pull/24633))
+* Fix formatWithStyles not styling the results if the first argument is an object + Added unit tests ([lunaruan](https://github.com/lunaruan) in [#24554](https://github.com/facebook/react/pull/24554))
+
+---
+
+### 4.24.6
+May 12, 2022
+
+* fix a bug in console.log with non-string args ([mondaychen](https://github.com/mondaychen) in [#24546](https://github.com/facebook/react/pull/24546))
+* Add Pragma to Only Run Tests if Version Requirement Satisfied ([lunaruan](https://github.com/lunaruan) in [#24533](https://github.com/facebook/react/pull/24533))
+* [DevTools][Bug] Fix Race Condition When Unmounting Fibers ([lunaruan](https://github.com/lunaruan) in [#24510](https://github.com/facebook/react/pull/24510))
+* [React DevTools] Improve DevTools UI when Inspecting a user Component that Throws an Error  ([mondaychen](https://github.com/mondaychen) in [#24248](https://github.com/facebook/react/pull/24248))
+
+---
+
+### 4.24.5
+May 5, 2022
+
+* Fixed potential undefined error in `TreeContext` reducer ([bvaughn](https://github.com/bvaughn) in [#24501](https://github.com/facebook/react/pull/24501))
+* Fix error where Profiler sometimes incorrectlyed reported that a `forwardRef` did not render ([lunaruan](https://github.com/lunaruan) in [#24494](https://github.com/facebook/react/pull/24494))
+* Fix regex for `formateWithStyles` function ([lunaruan](https://github.com/lunaruan) in [#24486](https://github.com/facebook/react/pull/24486))
+* Fixed wrong method call for LRU cache ([bvaughn](https://github.com/bvaughn) in [#24477](https://github.com/facebook/react/pull/24477))
+* Synchronize implementations of second render logging ([billyjanitsch](https://github.com/billyjanitsch) in [#24381](https://github.com/facebook/react/pull/24381))
+* Don't stringify objects for console log second render ([lunaruan](https://github.com/lunaruan) in [#24373](https://github.com/facebook/react/pull/24373))
+
+---
+
+### 4.24.4
+April 8, 2022
+
+* Allow react-devtools-inline `createStore()` method to override Store config params ([bvaughn](https://github.com/bvaughn) in [#24303](https://github.com/facebook/react/pull/24303))
+* [ReactDebugTools] wrap uncaught error from rendering user's component ([mondaychen](https://github.com/mondaychen) in [#24216](https://github.com/facebook/react/pull/24216))
+
+---
+
+### 4.24.3
+March 29, 2022
+
+#### Bugfix
+* Profiler should only report stateful hooks that change between renders ([bvaughn](https://github.com/bvaughn) in [#24189](https://github.com/facebook/react/pull/24189))
+* Ignore duplicate welcome "message" events ([bvaughn](https://github.com/bvaughn) in [#24186](https://github.com/facebook/react/pull/24186))
+* Attach DevTools Tree keyboard events to the Tree container (not the document) ([bvaughn](https://github.com/bvaughn) in [#24164](https://github.com/facebook/react/pull/24164))
+
+---
+
+### 4.24.2
+March 24, 2022
+
+#### Bugfix
+* Show upgrade/downgrade instructions inline for errors thrown by the Store due to incompatible protocol (mismatched backend and frontend versions) ([bvaughn](https://github.com/bvaughn) in [#24147](https://github.com/facebook/react/pull/24147))
+* Inspecting an element in a nested renderer no longer throws ([lunaruan](https://github.com/lunaruan) in [#24116](https://github.com/facebook/react/pull/24116))
+
+---
+
+### 4.24.1
+March 15, 2022
+
+#### Bugfix
+* Disable unsupported Bridge protocol version dialog and add workaround for old protocol operations format ([bvaughn](https://github.com/bvaughn) in [#24093](https://github.com/facebook/react/pull/24093))
+
+---
+
 ### 4.24.0
-March 2, 2022
+March 10, 2022
 
 #### Feature
 * Show DevTools backend and frontend versions in UI ([bvaughn](https://github.com/bvaughn) in [#23399](https://github.com/facebook/react/pull/23399))
 * Timeline profiler refactored to support reading basic profiling data directly from React ([bvaughn](https://github.com/bvaughn) in [#22529](https://github.com/facebook/react/issues/22529))
 
 #### Bugfix
+* Better handle undefined `Error` stacks in DevTools error boundary ([bvaughn](https://github.com/bvaughn) in [#24065](https://github.com/facebook/react/pull/24065))
+* Fixed edge case bug in Profiler commit filtering ([bvaughn](https://github.com/bvaughn) in [#24031](https://github.com/facebook/react/pull/24031))
 * Gracefully handle empty "xstyle" prop values ([lunaruan](https://github.com/lunaruan) in [#23279](https://github.com/facebook/react/pull/23279) and [bvaughn](https://github.com/bvaughn) in [#23190](https://github.com/facebook/react/pull/23190))
 * Add `<TracingMarker>` component boilerplate ([lunaruan](https://github.com/lunaruan) in [#23275](https://github.com/facebook/react/pull/23275))
 

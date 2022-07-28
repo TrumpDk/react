@@ -7,7 +7,6 @@
  * @flow
  */
 
-import type {Container} from './ReactDOMHostConfig';
 import type {MutableSource, ReactNodeList} from 'shared/ReactTypes';
 import type {
   FiberRoot,
@@ -27,9 +26,9 @@ export type RootType = {
 export type CreateRootOptions = {
   unstable_strictMode?: boolean,
   unstable_concurrentUpdatesByDefault?: boolean,
+  unstable_transitionCallbacks?: TransitionTracingCallbacks,
   identifierPrefix?: string,
   onRecoverableError?: (error: mixed) => void,
-  transitionCallbacks?: TransitionTracingCallbacks,
   ...
 };
 
@@ -41,6 +40,7 @@ export type HydrateRootOptions = {
   // Options for all roots
   unstable_strictMode?: boolean,
   unstable_concurrentUpdatesByDefault?: boolean,
+  unstable_transitionCallbacks?: TransitionTracingCallbacks,
   identifierPrefix?: string,
   onRecoverableError?: (error: mixed) => void,
   ...
@@ -82,8 +82,8 @@ const defaultOnRecoverableError =
       reportError
     : (error: mixed) => {
         // In older browsers and test environments, fallback to console.error.
-        // eslint-disable-next-line react-internal/no-production-logging, react-internal/warning-args
-        console.error(error);
+        // eslint-disable-next-line react-internal/no-production-logging
+        console['error'](error);
       };
 
 function ReactDOMRoot(internalRoot: FiberRoot) {
@@ -165,7 +165,7 @@ ReactDOMHydrationRoot.prototype.unmount = ReactDOMRoot.prototype.unmount = funct
 };
 
 export function createRoot(
-  container: Container,
+  container: Element | Document | DocumentFragment,
   options?: CreateRootOptions,
 ): RootType {
   if (!isValidContainer(container)) {
@@ -217,15 +217,14 @@ export function createRoot(
     if (options.onRecoverableError !== undefined) {
       onRecoverableError = options.onRecoverableError;
     }
-    if (options.transitionCallbacks !== undefined) {
-      transitionCallbacks = options.transitionCallbacks;
+    if (options.unstable_transitionCallbacks !== undefined) {
+      transitionCallbacks = options.unstable_transitionCallbacks;
     }
   }
 
   const root = createContainer(
     container,
     ConcurrentRoot,
-    false,
     null,
     isStrictMode,
     concurrentUpdatesByDefaultOverride,
@@ -235,8 +234,10 @@ export function createRoot(
   );
   markContainerAsRoot(root.current, container);
 
-  const rootContainerElement =
-    container.nodeType === COMMENT_NODE ? container.parentNode : container;
+  const rootContainerElement: Document | Element | DocumentFragment =
+    container.nodeType === COMMENT_NODE
+      ? (container.parentNode: any)
+      : container;
   listenToAllSupportedEvents(rootContainerElement);
 
   return new ReactDOMRoot(root);
@@ -253,7 +254,7 @@ function scheduleHydration(target: Node) {
 ReactDOMHydrationRoot.prototype.unstable_scheduleHydration = scheduleHydration;
 
 export function hydrateRoot(
-  container: Container,
+  container: Document | Element,
   initialChildren: ReactNodeList,
   options?: HydrateRootOptions,
 ): RootType {
@@ -282,6 +283,7 @@ export function hydrateRoot(
   let concurrentUpdatesByDefaultOverride = false;
   let identifierPrefix = '';
   let onRecoverableError = defaultOnRecoverableError;
+  let transitionCallbacks = null;
   if (options !== null && options !== undefined) {
     if (options.unstable_strictMode === true) {
       isStrictMode = true;
@@ -298,10 +300,14 @@ export function hydrateRoot(
     if (options.onRecoverableError !== undefined) {
       onRecoverableError = options.onRecoverableError;
     }
+    if (options.unstable_transitionCallbacks !== undefined) {
+      transitionCallbacks = options.unstable_transitionCallbacks;
+    }
   }
 
   const root = createHydrationContainer(
     initialChildren,
+    null,
     container,
     ConcurrentRoot,
     hydrationCallbacks,
@@ -309,8 +315,7 @@ export function hydrateRoot(
     concurrentUpdatesByDefaultOverride,
     identifierPrefix,
     onRecoverableError,
-    // TODO(luna) Support hydration later
-    null,
+    transitionCallbacks,
   );
   markContainerAsRoot(root.current, container);
   // This can't be a comment node since hydration doesn't work on comment nodes anyway.
@@ -351,7 +356,7 @@ export function isValidContainerLegacy(node: any): boolean {
   );
 }
 
-function warnIfReactDOMContainerInDEV(container) {
+function warnIfReactDOMContainerInDEV(container: any) {
   if (__DEV__) {
     if (
       container.nodeType === ELEMENT_NODE &&

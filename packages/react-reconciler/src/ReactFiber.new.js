@@ -14,8 +14,12 @@ import type {RootTag} from './ReactRootTags';
 import type {WorkTag} from './ReactWorkTags';
 import type {TypeOfMode} from './ReactTypeOfMode';
 import type {Lanes} from './ReactFiberLane.new';
-import type {SuspenseInstance, Props} from './ReactFiberHostConfig';
-import type {OffscreenProps} from './ReactFiberOffscreenComponent';
+import type {SuspenseInstance} from './ReactFiberHostConfig';
+import type {
+  OffscreenProps,
+  OffscreenInstance,
+} from './ReactFiberOffscreenComponent';
+import type {TracingMarkerInstance} from './ReactFiberTracingMarkerComponent.new';
 
 import {
   createRootStrictEffectsByDefault,
@@ -23,14 +27,12 @@ import {
   enableStrictEffects,
   enableProfilerTimer,
   enableScopeAPI,
+  enableLegacyHidden,
   enableSyncDefaultUpdates,
   allowConcurrentByDefault,
   enableTransitionTracing,
+  enableDebugTracing,
 } from 'shared/ReactFeatureFlags';
-import {
-  supportsPersistence,
-  getOffscreenContainerType,
-} from './ReactFiberHostConfig';
 import {NoFlags, Placement, StaticMask} from './ReactFiberFlags';
 import {ConcurrentRoot} from './ReactRootTags';
 import {
@@ -499,10 +501,6 @@ export function createFiberFromTypeAndProps(
     getTag: switch (type) {
       case REACT_FRAGMENT_TYPE:
         return createFiberFromFragment(pendingProps.children, mode, lanes, key);
-      case REACT_DEBUG_TRACING_MODE_TYPE:
-        fiberTag = Mode;
-        mode |= DebugTracingMode;
-        break;
       case REACT_STRICT_MODE_TYPE:
         fiberTag = Mode;
         mode |= StrictLegacyMode;
@@ -520,7 +518,10 @@ export function createFiberFromTypeAndProps(
       case REACT_OFFSCREEN_TYPE:
         return createFiberFromOffscreen(pendingProps, mode, lanes, key);
       case REACT_LEGACY_HIDDEN_TYPE:
-        return createFiberFromLegacyHidden(pendingProps, mode, lanes, key);
+        if (enableLegacyHidden) {
+          return createFiberFromLegacyHidden(pendingProps, mode, lanes, key);
+        }
+      // eslint-disable-next-line no-fallthrough
       case REACT_SCOPE_TYPE:
         if (enableScopeAPI) {
           return createFiberFromScope(type, pendingProps, mode, lanes, key);
@@ -534,6 +535,13 @@ export function createFiberFromTypeAndProps(
       case REACT_TRACING_MARKER_TYPE:
         if (enableTransitionTracing) {
           return createFiberFromTracingMarker(pendingProps, mode, lanes, key);
+        }
+      // eslint-disable-next-line no-fallthrough
+      case REACT_DEBUG_TRACING_MODE_TYPE:
+        if (enableDebugTracing) {
+          fiberTag = Mode;
+          mode |= DebugTracingMode;
+          break;
         }
       // eslint-disable-next-line no-fallthrough
       default: {
@@ -599,25 +607,6 @@ export function createFiberFromTypeAndProps(
   }
 
   return fiber;
-}
-
-export function createOffscreenHostContainerFiber(
-  props: Props,
-  fiberMode: TypeOfMode,
-  lanes: Lanes,
-  key: null | string,
-): Fiber {
-  if (supportsPersistence) {
-    const type = getOffscreenContainerType();
-    const fiber = createFiber(HostComponent, props, key, fiberMode);
-    fiber.elementType = type;
-    fiber.type = type;
-    fiber.lanes = lanes;
-    return fiber;
-  } else {
-    // Only implemented in persistent mode
-    throw new Error('Not implemented.');
-  }
 }
 
 export function createFiberFromElement(
@@ -734,6 +723,13 @@ export function createFiberFromOffscreen(
   const fiber = createFiber(OffscreenComponent, pendingProps, key, mode);
   fiber.elementType = REACT_OFFSCREEN_TYPE;
   fiber.lanes = lanes;
+  const primaryChildInstance: OffscreenInstance = {
+    isHidden: false,
+    pendingMarkers: null,
+    retryCache: null,
+    transitions: null,
+  };
+  fiber.stateNode = primaryChildInstance;
   return fiber;
 }
 
@@ -746,6 +742,15 @@ export function createFiberFromLegacyHidden(
   const fiber = createFiber(LegacyHiddenComponent, pendingProps, key, mode);
   fiber.elementType = REACT_LEGACY_HIDDEN_TYPE;
   fiber.lanes = lanes;
+  // Adding a stateNode for legacy hidden because it's currently using
+  // the offscreen implementation, which depends on a state node
+  const instance: OffscreenInstance = {
+    isHidden: false,
+    pendingMarkers: null,
+    transitions: null,
+    retryCache: null,
+  };
+  fiber.stateNode = instance;
   return fiber;
 }
 
@@ -770,6 +775,11 @@ export function createFiberFromTracingMarker(
   const fiber = createFiber(TracingMarkerComponent, pendingProps, key, mode);
   fiber.elementType = REACT_TRACING_MARKER_TYPE;
   fiber.lanes = lanes;
+  const tracingMarkerInstance: TracingMarkerInstance = {
+    transitions: null,
+    pendingBoundaries: null,
+  };
+  fiber.stateNode = tracingMarkerInstance;
   return fiber;
 }
 

@@ -62,7 +62,6 @@ import dangerousStyleValue from '../shared/dangerousStyleValue';
 import {retryIfBlockedOn} from '../events/ReactDOMEventReplaying';
 
 import {
-  enableSuspenseServerRenderer,
   enableCreateEventHandleAPI,
   enableScopeAPI,
 } from 'shared/ReactFeatureFlags';
@@ -107,7 +106,8 @@ export type EventTargetChildElement = {
 };
 export type Container =
   | (Element & {_reactRootContainer?: FiberRoot, ...})
-  | (Document & {_reactRootContainer?: FiberRoot, ...});
+  | (Document & {_reactRootContainer?: FiberRoot, ...})
+  | (DocumentFragment & {_reactRootContainer?: FiberRoot, ...});
 export type Instance = Element;
 export type TextInstance = Text;
 export type SuspenseInstance = Comment & {_reactRetry?: () => void, ...};
@@ -131,10 +131,7 @@ type SelectionInformation = {|
   selectionRange: mixed,
 |};
 
-let SUPPRESS_HYDRATION_WARNING;
-if (__DEV__) {
-  SUPPRESS_HYDRATION_WARNING = 'suppressHydrationWarning';
-}
+const SUPPRESS_HYDRATION_WARNING = 'suppressHydrationWarning';
 
 const SUSPENSE_START_DATA = '$';
 const SUSPENSE_END_DATA = '/$';
@@ -676,9 +673,8 @@ export function clearContainer(container: Container): void {
   if (container.nodeType === ELEMENT_NODE) {
     ((container: any): Element).textContent = '';
   } else if (container.nodeType === DOCUMENT_NODE) {
-    const body = ((container: any): Document).body;
-    if (body != null) {
-      body.textContent = '';
+    if (container.documentElement) {
+      container.removeChild(container.documentElement);
     }
   }
 }
@@ -735,6 +731,45 @@ export function isSuspenseInstanceFallback(instance: SuspenseInstance) {
   return instance.data === SUSPENSE_FALLBACK_START_DATA;
 }
 
+export function getSuspenseInstanceFallbackErrorDetails(
+  instance: SuspenseInstance,
+): {digest: ?string, message?: string, stack?: string} {
+  const dataset =
+    instance.nextSibling && ((instance.nextSibling: any): HTMLElement).dataset;
+  let digest, message, stack;
+  if (dataset) {
+    digest = dataset.dgst;
+    if (__DEV__) {
+      message = dataset.msg;
+      stack = dataset.stck;
+    }
+  }
+  if (__DEV__) {
+    return {
+      message,
+      digest,
+      stack,
+    };
+  } else {
+    // Object gets DCE'd if constructed in tail position and matches callsite destructuring
+    return {
+      digest,
+    };
+  }
+
+  // let value = {message: undefined, hash: undefined};
+  // const nextSibling = instance.nextSibling;
+  // if (nextSibling) {
+  //   const dataset = ((nextSibling: any): HTMLTemplateElement).dataset;
+  //   value.message = dataset.msg;
+  //   value.hash = dataset.hash;
+  //   if (__DEV__) {
+  //     value.stack = dataset.stack;
+  //   }
+  // }
+  // return value;
+}
+
 export function registerSuspenseInstanceRetry(
   instance: SuspenseInstance,
   callback: () => void,
@@ -749,19 +784,17 @@ function getNextHydratable(node) {
     if (nodeType === ELEMENT_NODE || nodeType === TEXT_NODE) {
       break;
     }
-    if (enableSuspenseServerRenderer) {
-      if (nodeType === COMMENT_NODE) {
-        const nodeData = (node: any).data;
-        if (
-          nodeData === SUSPENSE_START_DATA ||
-          nodeData === SUSPENSE_FALLBACK_START_DATA ||
-          nodeData === SUSPENSE_PENDING_START_DATA
-        ) {
-          break;
-        }
-        if (nodeData === SUSPENSE_END_DATA) {
-          return null;
-        }
+    if (nodeType === COMMENT_NODE) {
+      const nodeData = (node: any).data;
+      if (
+        nodeData === SUSPENSE_START_DATA ||
+        nodeData === SUSPENSE_FALLBACK_START_DATA ||
+        nodeData === SUSPENSE_PENDING_START_DATA
+      ) {
+        break;
+      }
+      if (nodeData === SUSPENSE_END_DATA) {
+        return null;
       }
     }
   }
@@ -939,8 +972,8 @@ export function didNotMatchHydratedContainerTextInstance(
   textInstance: TextInstance,
   text: string,
   isConcurrentMode: boolean,
+  shouldWarnDev: boolean,
 ) {
-  const shouldWarnDev = true;
   checkForUnmatchedText(
     textInstance.nodeValue,
     text,
@@ -956,9 +989,9 @@ export function didNotMatchHydratedTextInstance(
   textInstance: TextInstance,
   text: string,
   isConcurrentMode: boolean,
+  shouldWarnDev: boolean,
 ) {
   if (parentProps[SUPPRESS_HYDRATION_WARNING] !== true) {
-    const shouldWarnDev = true;
     checkForUnmatchedText(
       textInstance.nodeValue,
       text,
@@ -1007,14 +1040,17 @@ export function didNotHydrateInstance(
   parentProps: Props,
   parentInstance: Instance,
   instance: HydratableInstance,
+  isConcurrentMode: boolean,
 ) {
-  if (__DEV__ && parentProps[SUPPRESS_HYDRATION_WARNING] !== true) {
-    if (instance.nodeType === ELEMENT_NODE) {
-      warnForDeletedHydratableElement(parentInstance, (instance: any));
-    } else if (instance.nodeType === COMMENT_NODE) {
-      // TODO: warnForDeletedHydratableSuspenseBoundary
-    } else {
-      warnForDeletedHydratableText(parentInstance, (instance: any));
+  if (__DEV__) {
+    if (isConcurrentMode || parentProps[SUPPRESS_HYDRATION_WARNING] !== true) {
+      if (instance.nodeType === ELEMENT_NODE) {
+        warnForDeletedHydratableElement(parentInstance, (instance: any));
+      } else if (instance.nodeType === COMMENT_NODE) {
+        // TODO: warnForDeletedHydratableSuspenseBoundary
+      } else {
+        warnForDeletedHydratableText(parentInstance, (instance: any));
+      }
     }
   }
 }
@@ -1085,9 +1121,12 @@ export function didNotFindHydratableInstance(
   parentInstance: Instance,
   type: string,
   props: Props,
+  isConcurrentMode: boolean,
 ) {
-  if (__DEV__ && parentProps[SUPPRESS_HYDRATION_WARNING] !== true) {
-    warnForInsertedHydratedElement(parentInstance, type, props);
+  if (__DEV__) {
+    if (isConcurrentMode || parentProps[SUPPRESS_HYDRATION_WARNING] !== true) {
+      warnForInsertedHydratedElement(parentInstance, type, props);
+    }
   }
 }
 
@@ -1096,9 +1135,12 @@ export function didNotFindHydratableTextInstance(
   parentProps: Props,
   parentInstance: Instance,
   text: string,
+  isConcurrentMode: boolean,
 ) {
-  if (__DEV__ && parentProps[SUPPRESS_HYDRATION_WARNING] !== true) {
-    warnForInsertedHydratedText(parentInstance, text);
+  if (__DEV__) {
+    if (isConcurrentMode || parentProps[SUPPRESS_HYDRATION_WARNING] !== true) {
+      warnForInsertedHydratedText(parentInstance, text);
+    }
   }
 }
 
@@ -1107,7 +1149,7 @@ export function didNotFindHydratableSuspenseInstance(
   parentProps: Props,
   parentInstance: Instance,
 ) {
-  if (__DEV__ && parentProps[SUPPRESS_HYDRATION_WARNING] !== true) {
+  if (__DEV__) {
     // TODO: warnForInsertedHydratedSuspense(parentInstance);
   }
 }

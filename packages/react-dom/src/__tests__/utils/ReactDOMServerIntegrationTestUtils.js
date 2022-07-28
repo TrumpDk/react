@@ -89,7 +89,7 @@ module.exports = function(initModules) {
         console.log(
           `We expected ${count} warning(s), but saw ${filteredWarnings.length} warning(s).`,
         );
-        if (filteredWarnings.count > 0) {
+        if (filteredWarnings.length > 0) {
           console.log(`We saw these warnings:`);
           for (let i = 0; i < filteredWarnings.length; i++) {
             console.log(...filteredWarnings[i]);
@@ -155,7 +155,7 @@ module.exports = function(initModules) {
         new Promise((resolve, reject) => {
           const writable = new DrainWritable();
           const s = ReactDOMServer.renderToPipeableStream(reactElement, {
-            onErrorShell(e) {
+            onShellError(e) {
               reject(e);
             },
           });

@@ -16,6 +16,7 @@ import type {
   ReactNodeList,
   ReactContext,
   ReactProviderType,
+  OffscreenMode,
 } from 'shared/ReactTypes';
 import type {LazyComponent as LazyComponentType} from 'react/src/ReactLazy';
 import type {
@@ -56,6 +57,7 @@ import {
   pushEndInstance,
   pushStartCompletedSuspenseBoundary,
   pushEndCompletedSuspenseBoundary,
+  pushSegmentFinale,
   UNINITIALIZED_SUSPENSE_BOUNDARY_ID,
   assignSuspenseBoundaryID,
   getChildFormatContext,
@@ -106,6 +108,7 @@ import {
   REACT_PROVIDER_TYPE,
   REACT_CONTEXT_TYPE,
   REACT_SCOPE_TYPE,
+  REACT_OFFSCREEN_TYPE,
 } from 'shared/ReactSymbols';
 import ReactSharedInternals from 'shared/ReactSharedInternals';
 import {
@@ -113,7 +116,6 @@ import {
   disableModulePatternComponents,
   warnAboutDefaultPropsOnFunctionComponents,
   enableScopeAPI,
-  enableLazyElements,
   enableSuspenseAvoidThisFallbackFizz,
 } from 'shared/ReactFeatureFlags';
 
@@ -131,6 +133,9 @@ type LegacyContext = {
 type SuspenseBoundary = {
   id: SuspenseBoundaryID,
   rootSegmentID: number,
+  errorDigest: ?string, // the error hash if it errors
+  errorMessage?: string, // the error string if it errors
+  errorComponentStack?: string, // the error component stack if it errors
   forceClientRender: boolean, // if it errors or infinitely suspends
   parentFlushed: boolean,
   pendingTasks: number, // when it reaches zero we can show this boundary's content
@@ -170,6 +175,9 @@ type Segment = {
   formatContext: FormatContext,
   // If this segment represents a fallback, this is the content that will replace that fallback.
   +boundary: null | SuspenseBoundary,
+  // used to discern when text separator boundaries are needed
+  lastPushedText: boolean,
+  textEmbedded: boolean,
 };
 
 const OPEN = 0;
@@ -193,17 +201,19 @@ export opaque type Request = {
   completedBoundaries: Array<SuspenseBoundary>, // Completed but not yet fully flushed boundaries to show.
   partialBoundaries: Array<SuspenseBoundary>, // Partially completed boundaries that can flush its segments early.
   // onError is called when an error happens anywhere in the tree. It might recover.
-  onError: (error: mixed) => void,
-  // onCompleteAll is called when all pending task is done but it may not have flushed yet.
+  // The return string is used in production  primarily to avoid leaking internals, secondarily to save bytes.
+  // Returning null/undefined will cause a defualt error message in production
+  onError: (error: mixed) => ?string,
+  // onAllReady is called when all pending task is done but it may not have flushed yet.
   // This is a good time to start writing if you want only HTML and no intermediate steps.
-  onCompleteAll: () => void,
-  // onCompleteShell is called when there is at least a root fallback ready to show.
+  onAllReady: () => void,
+  // onShellReady is called when there is at least a root fallback ready to show.
   // Typically you don't need this callback because it's best practice to always have a
   // root fallback ready so there's no need to wait.
-  onCompleteShell: () => void,
-  // onErrorShell is called when the shell didn't complete. That means you probably want to
+  onShellReady: () => void,
+  // onShellError is called when the shell didn't complete. That means you probably want to
   // emit a different response to the stream instead.
-  onErrorShell: (error: mixed) => void,
+  onShellError: (error: mixed) => void,
   onFatalError: (error: mixed) => void,
 };
 
@@ -226,6 +236,7 @@ const DEFAULT_PROGRESSIVE_CHUNK_SIZE = 12800;
 
 function defaultErrorHandler(error: mixed) {
   console['error'](error); // Don't transform to our wrapper
+  return null;
 }
 
 function noop(): void {}
@@ -235,10 +246,10 @@ export function createRequest(
   responseState: ResponseState,
   rootFormatContext: FormatContext,
   progressiveChunkSize: void | number,
-  onError: void | ((error: mixed) => void),
-  onCompleteAll: void | (() => void),
-  onCompleteShell: void | (() => void),
-  onErrorShell: void | ((error: mixed) => void),
+  onError: void | ((error: mixed) => ?string),
+  onAllReady: void | (() => void),
+  onShellReady: void | (() => void),
+  onShellError: void | ((error: mixed) => void),
   onFatalError: void | ((error: mixed) => void),
 ): Request {
   const pingedTasks = [];
@@ -262,13 +273,21 @@ export function createRequest(
     completedBoundaries: [],
     partialBoundaries: [],
     onError: onError === undefined ? defaultErrorHandler : onError,
-    onCompleteAll: onCompleteAll === undefined ? noop : onCompleteAll,
-    onCompleteShell: onCompleteShell === undefined ? noop : onCompleteShell,
-    onErrorShell: onErrorShell === undefined ? noop : onErrorShell,
+    onAllReady: onAllReady === undefined ? noop : onAllReady,
+    onShellReady: onShellReady === undefined ? noop : onShellReady,
+    onShellError: onShellError === undefined ? noop : onShellError,
     onFatalError: onFatalError === undefined ? noop : onFatalError,
   };
   // This segment represents the root fallback.
-  const rootSegment = createPendingSegment(request, 0, null, rootFormatContext);
+  const rootSegment = createPendingSegment(
+    request,
+    0,
+    null,
+    rootFormatContext,
+    // Root segments are never embedded in Text on either edge
+    false,
+    false,
+  );
   // There is no parent so conceptually, we're unblocked to flush this segment.
   rootSegment.parentFlushed = true;
   const rootTask = createTask(
@@ -306,6 +325,7 @@ function createSuspenseBoundary(
     completedSegments: [],
     byteSize: 0,
     fallbackAbortableTasks,
+    errorDigest: null,
   };
 }
 
@@ -347,6 +367,8 @@ function createPendingSegment(
   index: number,
   boundary: null | SuspenseBoundary,
   formatContext: FormatContext,
+  lastPushedText: boolean,
+  textEmbedded: boolean,
 ): Segment {
   return {
     status: PENDING,
@@ -357,6 +379,8 @@ function createPendingSegment(
     children: [],
     formatContext,
     boundary,
+    lastPushedText,
+    textEmbedded,
   };
 }
 
@@ -411,19 +435,54 @@ function popComponentStackInDEV(task: Task): void {
   }
 }
 
-function logRecoverableError(request: Request, error: mixed): void {
+// stash the component stack of an unwinding error until it is processed
+let lastBoundaryErrorComponentStackDev: ?string = null;
+
+function captureBoundaryErrorDetailsDev(
+  boundary: SuspenseBoundary,
+  error: mixed,
+) {
+  if (__DEV__) {
+    let errorMessage;
+    if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error.message === 'string') {
+      errorMessage = error.message;
+    } else {
+      // eslint-disable-next-line react-internal/safe-string-coercion
+      errorMessage = String(error);
+    }
+
+    const errorComponentStack =
+      lastBoundaryErrorComponentStackDev || getCurrentStackInDEV();
+    lastBoundaryErrorComponentStackDev = null;
+
+    boundary.errorMessage = errorMessage;
+    boundary.errorComponentStack = errorComponentStack;
+  }
+}
+
+function logRecoverableError(request: Request, error: any): ?string {
   // If this callback errors, we intentionally let that error bubble up to become a fatal error
   // so that someone fixes the error reporting instead of hiding it.
-  const onError = request.onError;
-  onError(error);
+  const errorDigest = request.onError(error);
+  if (errorDigest != null && typeof errorDigest !== 'string') {
+    // eslint-disable-next-line react-internal/prod-error-codes
+    throw new Error(
+      `onError returned something with a type other than "string". onError should return a string and may return null or undefined but must not return anything else. It received something of type "${typeof errorDigest}" instead`,
+    );
+  }
+  return errorDigest;
 }
 
 function fatalError(request: Request, error: mixed): void {
   // This is called outside error handling code such as if the root errors outside
   // a suspense boundary or if the root suspense boundary's fallback errors.
   // It's also called if React itself or its host configs errors.
-  const onErrorShell = request.onErrorShell;
-  onErrorShell(error);
+  const onShellError = request.onShellError;
+  onShellError(error);
+  const onFatalError = request.onFatalError;
+  onFatalError(error);
   if (request.destination !== null) {
     request.status = CLOSED;
     closeWithError(request.destination, error);
@@ -458,8 +517,13 @@ function renderSuspenseBoundary(
     insertionIndex,
     newBoundary,
     parentSegment.formatContext,
+    // boundaries never require text embedding at their edges because comment nodes bound them
+    false,
+    false,
   );
   parentSegment.children.push(boundarySegment);
+  // The parentSegment has a child Segment at this index so we reset the lastPushedText marker on the parent
+  parentSegment.lastPushedText = false;
 
   // This segment is the actual child content. We can start rendering that immediately.
   const contentRootSegment = createPendingSegment(
@@ -467,6 +531,9 @@ function renderSuspenseBoundary(
     0,
     null,
     parentSegment.formatContext,
+    // boundaries never require text embedding at their edges because comment nodes bound them
+    false,
+    false,
   );
   // We mark the root segment as having its parent flushed. It's not really flushed but there is
   // no parent segment so there's nothing to wait on.
@@ -485,8 +552,14 @@ function renderSuspenseBoundary(
   try {
     // We use the safe form because we don't handle suspending here. Only error handling.
     renderNode(request, task, content);
+    pushSegmentFinale(
+      contentRootSegment.chunks,
+      request.responseState,
+      contentRootSegment.lastPushedText,
+      contentRootSegment.textEmbedded,
+    );
     contentRootSegment.status = COMPLETED;
-    newBoundary.completedSegments.push(contentRootSegment);
+    queueCompletedSegment(newBoundary, contentRootSegment);
     if (newBoundary.pendingTasks === 0) {
       // This must have been the last segment we were waiting on. This boundary is now complete.
       // Therefore we won't need the fallback. We early return so that we don't have to create
@@ -496,8 +569,12 @@ function renderSuspenseBoundary(
     }
   } catch (error) {
     contentRootSegment.status = ERRORED;
-    logRecoverableError(request, error);
     newBoundary.forceClientRender = true;
+    newBoundary.errorDigest = logRecoverableError(request, error);
+    if (__DEV__) {
+      captureBoundaryErrorDetailsDev(newBoundary, error);
+    }
+
     // We don't need to decrement any task numbers because we didn't spawn any new task.
     // We don't need to schedule any task because we know the parent has written yet.
     // We do need to fallthrough to create the fallback though.
@@ -560,15 +637,18 @@ function renderHostElement(
     request.responseState,
     segment.formatContext,
   );
+  segment.lastPushedText = false;
   const prevContext = segment.formatContext;
   segment.formatContext = getChildFormatContext(prevContext, type, props);
   // We use the non-destructive form because if something suspends, we still
   // need to pop back up and finish this subtree of HTML.
   renderNode(request, task, children);
+
   // We expect that errors will fatal the whole task and that we don't need
   // the correct context. Therefore this is not in a finally.
   segment.formatContext = prevContext;
   pushEndInstance(segment.chunks, type, props);
+  segment.lastPushedText = false;
   popComponentStackInDEV(task);
 }
 
@@ -984,6 +1064,18 @@ function renderLazyComponent(
   popComponentStackInDEV(task);
 }
 
+function renderOffscreen(request: Request, task: Task, props: Object): void {
+  const mode: ?OffscreenMode = (props.mode: any);
+  if (mode === 'hidden') {
+    // A hidden Offscreen boundary is not server rendered. Prerendering happens
+    // on the client.
+  } else {
+    // A visible Offscreen boundary is treated exactly like a fragment: a
+    // pure indirection.
+    renderNodeDestructive(request, task, props.children);
+  }
+}
+
 function renderElement(
   request: Request,
   task: Task,
@@ -1006,20 +1098,25 @@ function renderElement(
   }
 
   switch (type) {
-    // TODO: LegacyHidden acts the same as a fragment. This only works
-    // because we currently assume that every instance of LegacyHidden is
-    // accompanied by a host component wrapper. In the hidden mode, the host
-    // component is given a `hidden` attribute, which ensures that the
-    // initial HTML is not visible. To support the use of LegacyHidden as a
-    // true fragment, without an extra DOM node, we would have to hide the
-    // initial HTML in some other way.
-    // TODO: Add REACT_OFFSCREEN_TYPE here too with the same capability.
+    // LegacyHidden acts the same as a fragment. This only works because we
+    // currently assume that every instance of LegacyHidden is accompanied by a
+    // host component wrapper. In the hidden mode, the host component is given a
+    // `hidden` attribute, which ensures that the initial HTML is not visible.
+    // To support the use of LegacyHidden as a true fragment, without an extra
+    // DOM node, we would have to hide the initial HTML in some other way.
+    // TODO: Delete in LegacyHidden. It's an unstable API only used in the
+    // www build. As a migration step, we could add a special prop to Offscreen
+    // that simulates the old behavior (no hiding, no change to effects).
     case REACT_LEGACY_HIDDEN_TYPE:
     case REACT_DEBUG_TRACING_MODE_TYPE:
     case REACT_STRICT_MODE_TYPE:
     case REACT_PROFILER_TYPE:
     case REACT_FRAGMENT_TYPE: {
       renderNodeDestructive(request, task, props.children);
+      return;
+    }
+    case REACT_OFFSCREEN_TYPE: {
+      renderOffscreen(request, task, props);
       return;
     }
     case REACT_SUSPENSE_LIST_TYPE: {
@@ -1131,9 +1228,38 @@ function validateIterable(iterable, iteratorFn: Function): void {
   }
 }
 
+function renderNodeDestructive(
+  request: Request,
+  task: Task,
+  node: ReactNodeList,
+): void {
+  if (__DEV__) {
+    // In Dev we wrap renderNodeDestructiveImpl in a try / catch so we can capture
+    // a component stack at the right place in the tree. We don't do this in renderNode
+    // becuase it is not called at every layer of the tree and we may lose frames
+    try {
+      return renderNodeDestructiveImpl(request, task, node);
+    } catch (x) {
+      if (typeof x === 'object' && x !== null && typeof x.then === 'function') {
+        // This is a Wakable, noop
+      } else {
+        // This is an error, stash the component stack if it is null.
+        lastBoundaryErrorComponentStackDev =
+          lastBoundaryErrorComponentStackDev !== null
+            ? lastBoundaryErrorComponentStackDev
+            : getCurrentStackInDEV();
+      }
+      // rethrow so normal suspense logic can handle thrown value accordingly
+      throw x;
+    }
+  } else {
+    return renderNodeDestructiveImpl(request, task, node);
+  }
+}
+
 // This function by it self renders a node and consumes the task by mutating it
 // to update the current execution state.
-function renderNodeDestructive(
+function renderNodeDestructiveImpl(
   request: Request,
   task: Task,
   node: ReactNodeList,
@@ -1160,14 +1286,32 @@ function renderNodeDestructive(
         );
       // eslint-disable-next-line-no-fallthrough
       case REACT_LAZY_TYPE: {
-        if (enableLazyElements) {
-          const lazyNode: LazyComponentType<any, any> = (node: any);
-          const payload = lazyNode._payload;
-          const init = lazyNode._init;
-          const resolvedNode = init(payload);
-          renderNodeDestructive(request, task, resolvedNode);
-          return;
+        const lazyNode: LazyComponentType<any, any> = (node: any);
+        const payload = lazyNode._payload;
+        const init = lazyNode._init;
+        let resolvedNode;
+        if (__DEV__) {
+          try {
+            resolvedNode = init(payload);
+          } catch (x) {
+            if (
+              typeof x === 'object' &&
+              x !== null &&
+              typeof x.then === 'function'
+            ) {
+              // this Lazy initializer is suspending. push a temporary frame onto the stack so it can be
+              // popped off in spawnNewSuspendedTask. This aligns stack behavior between Lazy in element position
+              // vs Component position. We do not want the frame for Errors so we exclusively do this in
+              // the wakeable branch
+              pushBuiltInComponentStackInDEV(task, 'Lazy');
+            }
+            throw x;
+          }
+        } else {
+          resolvedNode = init(payload);
         }
+        renderNodeDestructive(request, task, resolvedNode);
+        return;
       }
     }
 
@@ -1179,7 +1323,7 @@ function renderNodeDestructive(
     const iteratorFn = getIteratorFn(node);
     if (iteratorFn) {
       if (__DEV__) {
-        validateIterable(node, iteratorFn());
+        validateIterable(node, iteratorFn);
       }
       const iterator = iteratorFn.call(node);
       if (iterator) {
@@ -1217,15 +1361,23 @@ function renderNodeDestructive(
   }
 
   if (typeof node === 'string') {
-    pushTextInstance(task.blockedSegment.chunks, node, request.responseState);
+    const segment = task.blockedSegment;
+    segment.lastPushedText = pushTextInstance(
+      task.blockedSegment.chunks,
+      node,
+      request.responseState,
+      segment.lastPushedText,
+    );
     return;
   }
 
   if (typeof node === 'number') {
-    pushTextInstance(
+    const segment = task.blockedSegment;
+    segment.lastPushedText = pushTextInstance(
       task.blockedSegment.chunks,
       '' + node,
       request.responseState,
+      segment.lastPushedText,
     );
     return;
   }
@@ -1269,8 +1421,14 @@ function spawnNewSuspendedTask(
     insertionIndex,
     null,
     segment.formatContext,
+    // Adopt the parent segment's leading text embed
+    segment.lastPushedText,
+    // Assume we are text embedded at the trailing edge
+    true,
   );
   segment.children.push(newSegment);
+  // Reset lastPushedText for current Segment since the new Segment "consumed" it
+  segment.lastPushedText = false;
   const newTask = createTask(
     request,
     task.node,
@@ -1349,13 +1507,17 @@ function erroredTask(
   error: mixed,
 ) {
   // Report the error to a global handler.
-  logRecoverableError(request, error);
+  const errorDigest = logRecoverableError(request, error);
   if (boundary === null) {
     fatalError(request, error);
   } else {
     boundary.pendingTasks--;
     if (!boundary.forceClientRender) {
       boundary.forceClientRender = true;
+      boundary.errorDigest = errorDigest;
+      if (__DEV__) {
+        captureBoundaryErrorDetailsDev(boundary, error);
+      }
 
       // Regardless of what happens next, this boundary won't be displayed,
       // so we can flush it, if the parent already flushed.
@@ -1371,8 +1533,8 @@ function erroredTask(
 
   request.allPendingTasks--;
   if (request.allPendingTasks === 0) {
-    const onCompleteAll = request.onCompleteAll;
-    onCompleteAll();
+    const onAllReady = request.onAllReady;
+    onAllReady();
   }
 }
 
@@ -1387,10 +1549,9 @@ function abortTaskSoft(task: Task): void {
   finishedTask(request, boundary, segment);
 }
 
-function abortTask(task: Task): void {
+function abortTask(task: Task, request: Request, error: mixed): void {
   // This aborts the task and aborts the parent that it blocks, putting it into
   // client rendered mode.
-  const request: Request = this;
   const boundary = task.blockedBoundary;
   const segment = task.blockedSegment;
   segment.status = ABORTED;
@@ -1399,17 +1560,34 @@ function abortTask(task: Task): void {
     request.allPendingTasks--;
     // We didn't complete the root so we have nothing to show. We can close
     // the request;
-    if (request.status !== CLOSED) {
-      request.status = CLOSED;
-      if (request.destination !== null) {
-        close(request.destination);
-      }
+    if (request.status !== CLOSING && request.status !== CLOSED) {
+      logRecoverableError(request, error);
+      fatalError(request, error);
     }
   } else {
     boundary.pendingTasks--;
 
     if (!boundary.forceClientRender) {
       boundary.forceClientRender = true;
+      boundary.errorDigest = request.onError(error);
+      if (__DEV__) {
+        const errorPrefix =
+          'The server did not finish this Suspense boundary: ';
+        let errorMessage;
+        if (error && typeof error.message === 'string') {
+          errorMessage = errorPrefix + error.message;
+        } else {
+          // eslint-disable-next-line react-internal/safe-string-coercion
+          errorMessage = errorPrefix + String(error);
+        }
+        const previousTaskInDev = currentTaskInDEV;
+        currentTaskInDEV = task;
+        try {
+          captureBoundaryErrorDetailsDev(boundary, errorMessage);
+        } finally {
+          currentTaskInDEV = previousTaskInDev;
+        }
+      }
       if (boundary.parentFlushed) {
         request.clientRenderedBoundaries.push(boundary);
       }
@@ -1417,14 +1595,39 @@ function abortTask(task: Task): void {
 
     // If this boundary was still pending then we haven't already cancelled its fallbacks.
     // We'll need to abort the fallbacks, which will also error that parent boundary.
-    boundary.fallbackAbortableTasks.forEach(abortTask, request);
+    boundary.fallbackAbortableTasks.forEach(fallbackTask =>
+      abortTask(fallbackTask, request, error),
+    );
     boundary.fallbackAbortableTasks.clear();
 
     request.allPendingTasks--;
     if (request.allPendingTasks === 0) {
-      const onCompleteAll = request.onCompleteAll;
-      onCompleteAll();
+      const onAllReady = request.onAllReady;
+      onAllReady();
     }
+  }
+}
+
+function queueCompletedSegment(
+  boundary: SuspenseBoundary,
+  segment: Segment,
+): void {
+  if (
+    segment.chunks.length === 0 &&
+    segment.children.length === 1 &&
+    segment.children[0].boundary === null
+  ) {
+    // This is an empty segment. There's nothing to write, so we can instead transfer the ID
+    // to the child. That way any existing references point to the child.
+    const childSegment = segment.children[0];
+    childSegment.id = segment.id;
+    childSegment.parentFlushed = true;
+    if (childSegment.status === COMPLETED) {
+      queueCompletedSegment(boundary, childSegment);
+    }
+  } else {
+    const completedSegments = boundary.completedSegments;
+    completedSegments.push(segment);
   }
 }
 
@@ -1446,9 +1649,9 @@ function finishedTask(
     request.pendingRootTasks--;
     if (request.pendingRootTasks === 0) {
       // We have completed the shell so the shell can't error anymore.
-      request.onErrorShell = noop;
-      const onCompleteShell = request.onCompleteShell;
-      onCompleteShell();
+      request.onShellError = noop;
+      const onShellReady = request.onShellReady;
+      onShellReady();
     }
   } else {
     boundary.pendingTasks--;
@@ -1461,7 +1664,7 @@ function finishedTask(
         // If it is a segment that was aborted, we'll write other content instead so we don't need
         // to emit it.
         if (segment.status === COMPLETED) {
-          boundary.completedSegments.push(segment);
+          queueCompletedSegment(boundary, segment);
         }
       }
       if (boundary.parentFlushed) {
@@ -1480,8 +1683,8 @@ function finishedTask(
         // If it is a segment that was aborted, we'll write other content instead so we don't need
         // to emit it.
         if (segment.status === COMPLETED) {
+          queueCompletedSegment(boundary, segment);
           const completedSegments = boundary.completedSegments;
-          completedSegments.push(segment);
           if (completedSegments.length === 1) {
             // This is the first time since we last flushed that we completed anything.
             // We can schedule this boundary to emit its partially completed segments early
@@ -1499,8 +1702,8 @@ function finishedTask(
   if (request.allPendingTasks === 0) {
     // This needs to be called at the very end so that we can synchronously write the result
     // in the callback if needed.
-    const onCompleteAll = request.onCompleteAll;
-    onCompleteAll();
+    const onAllReady = request.onAllReady;
+    onAllReady();
   }
 }
 
@@ -1523,6 +1726,12 @@ function retryTask(request: Request, task: Task): void {
     // We call the destructive form that mutates this task. That way if something
     // suspends again, we can reuse the same task instead of spawning a new one.
     renderNodeDestructive(request, task, task.node);
+    pushSegmentFinale(
+      segment.chunks,
+      request.responseState,
+      segment.lastPushedText,
+      segment.textEmbedded,
+    );
 
     task.abortSet.delete(task);
     segment.status = COMPLETED;
@@ -1603,6 +1812,9 @@ function flushSubtree(
       // We're emitting a placeholder for this segment to be filled in later.
       // Therefore we'll need to assign it an ID - to refer to it by.
       const segmentID = (segment.id = request.nextSegmentId++);
+      // When this segment finally completes it won't be embedded in text since it will flush separately
+      segment.lastPushedText = false;
+      segment.textEmbedded = false;
       return writePlaceholder(destination, request.responseState, segmentID);
     }
     case COMPLETED: {
@@ -1656,8 +1868,10 @@ function flushSegment(
     writeStartClientRenderedSuspenseBoundary(
       destination,
       request.responseState,
+      boundary.errorDigest,
+      boundary.errorMessage,
+      boundary.errorComponentStack,
     );
-
     // Flush the fallback.
     flushSubtree(request, destination, segment);
 
@@ -1737,6 +1951,9 @@ function flushClientRenderedBoundary(
     destination,
     request.responseState,
     boundary.id,
+    boundary.errorDigest,
+    boundary.errorMessage,
+    boundary.errorComponentStack,
   );
 }
 
@@ -1972,11 +2189,17 @@ export function startFlowing(request: Request, destination: Destination): void {
 }
 
 // This is called to early terminate a request. It puts all pending boundaries in client rendered state.
-export function abort(request: Request): void {
+export function abort(request: Request, reason: mixed): void {
   try {
     const abortableTasks = request.abortableTasks;
-    abortableTasks.forEach(abortTask, request);
-    abortableTasks.clear();
+    if (abortableTasks.size > 0) {
+      const error =
+        reason === undefined
+          ? new Error('The render was aborted by the server without a reason.')
+          : reason;
+      abortableTasks.forEach(task => abortTask(task, request, error));
+      abortableTasks.clear();
+    }
     if (request.destination !== null) {
       flushCompletedQueues(request, request.destination);
     }

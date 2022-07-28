@@ -8,15 +8,20 @@
  */
 
 import type {ReactModel} from 'react-server/src/ReactFlightServer';
+import type {ServerContextJSONValue} from 'shared/ReactTypes';
 import type {BundlerConfig} from './ReactFlightServerWebpackBundlerConfig';
 
 import {
   createRequest,
   startWork,
   startFlowing,
+  abort,
 } from 'react-server/src/ReactFlightServer';
 
 type Options = {
+  identifierPrefix?: string,
+  signal?: AbortSignal,
+  context?: Array<[string, ServerContextJSONValue]>,
   onError?: (error: mixed) => void,
 };
 
@@ -29,17 +34,35 @@ function renderToReadableStream(
     model,
     webpackMap,
     options ? options.onError : undefined,
+    options ? options.context : undefined,
+    options ? options.identifierPrefix : undefined,
   );
-  const stream = new ReadableStream({
-    type: 'bytes',
-    start(controller) {
-      startWork(request);
+  if (options && options.signal) {
+    const signal = options.signal;
+    if (signal.aborted) {
+      abort(request, (signal: any).reason);
+    } else {
+      const listener = () => {
+        abort(request, (signal: any).reason);
+        signal.removeEventListener('abort', listener);
+      };
+      signal.addEventListener('abort', listener);
+    }
+  }
+  const stream = new ReadableStream(
+    {
+      type: 'bytes',
+      start(controller) {
+        startWork(request);
+      },
+      pull(controller) {
+        startFlowing(request, controller);
+      },
+      cancel(reason) {},
     },
-    pull(controller) {
-      startFlowing(request, controller);
-    },
-    cancel(reason) {},
-  });
+    // $FlowFixMe size() methods are not allowed on byte streams.
+    {highWaterMark: 0},
+  );
   return stream;
 }
 
