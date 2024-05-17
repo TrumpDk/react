@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -27,9 +27,7 @@ function accumulateInto<T>(
   next: T | Array<T>,
 ): T | Array<T> {
   if (next == null) {
-    throw new Error(
-      'accumulateInto(...): Accumulated items must not be null or undefined.',
-    );
+    throw new Error('Accumulated items must not be null or undefined.');
   }
 
   if (current == null) {
@@ -40,15 +38,20 @@ function accumulateInto<T>(
   // certain that x is an Array (x could be a string with concat method).
   if (isArray(current)) {
     if (isArray(next)) {
+      // $FlowFixMe[prop-missing] `isArray` does not ensure array is mutable
+      // $FlowFixMe[method-unbinding]
       current.push.apply(current, next);
       return current;
     }
+    // $FlowFixMe[prop-missing] `isArray` does not ensure array is mutable
     current.push(next);
     return current;
   }
 
   if (isArray(next)) {
     // A bit too dangerous to mutate `next`.
+    /* $FlowFixMe[incompatible-return] unsound if `next` is `T` and `T` an array,
+     * `isArray` might refine to the array element type of `T` */
     return [current].concat(next);
   }
 

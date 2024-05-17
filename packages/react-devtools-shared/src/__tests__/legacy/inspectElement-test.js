@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -26,16 +26,11 @@ describe('InspectedElementContext', () => {
 
   async function read(
     id: number,
-    path?: Array<string | number> = null,
+    path: Array<string | number> = null,
   ): Promise<Object> {
     const rendererID = ((store.getRendererIDForElement(id): any): number);
     const promise = backendAPI
-      .inspectElement({
-        bridge,
-        id,
-        path,
-        rendererID,
-      })
+      .inspectElement(bridge, false, id, path, rendererID)
       .then(data =>
         backendAPI.convertInspectedElementBackendToFrontend(data.value),
       );
@@ -67,20 +62,23 @@ describe('InspectedElementContext', () => {
     const Example = () => null;
 
     act(() =>
-      ReactDOM.render(<Example a={1} b="abc" />, document.createElement('div')),
+      ReactDOM.render(
+        React.createElement(Example, {a: 1, b: 'abc'}),
+        document.createElement('div'),
+      ),
     );
 
     const id = ((store.getElementIDAtIndex(0): any): number);
     const inspectedElement = await read(id);
 
     expect(inspectedElement).toMatchInlineSnapshot(`
-      Object {
-        "context": Object {},
+      {
+        "context": {},
         "events": undefined,
         "hooks": null,
         "id": 2,
         "owners": null,
-        "props": Object {
+        "props": {
           "a": 1,
           "b": "abc",
         },
@@ -96,19 +94,19 @@ describe('InspectedElementContext', () => {
 
     act(() =>
       ReactDOM.render(
-        <Example
-          boolean_false={false}
-          boolean_true={true}
-          infinity={Infinity}
-          integer_zero={0}
-          integer_one={1}
-          float={1.23}
-          string="abc"
-          string_empty=""
-          nan={NaN}
-          value_null={null}
-          value_undefined={undefined}
-        />,
+        React.createElement(Example, {
+          boolean_false: false,
+          boolean_true: true,
+          infinity: Infinity,
+          integer_zero: 0,
+          integer_one: 1,
+          float: 1.23,
+          string: 'abc',
+          string_empty: '',
+          nan: NaN,
+          value_null: null,
+          value_undefined: undefined,
+        }),
         document.createElement('div'),
       ),
     );
@@ -117,13 +115,13 @@ describe('InspectedElementContext', () => {
     const inspectedElement = await read(id);
 
     expect(inspectedElement).toMatchInlineSnapshot(`
-      Object {
-        "context": Object {},
+      {
+        "context": {},
         "events": undefined,
         "hooks": null,
         "id": 2,
         "owners": null,
-        "props": Object {
+        "props": {
           "boolean_false": false,
           "boolean_true": true,
           "float": 1.23,
@@ -183,28 +181,28 @@ describe('InspectedElementContext', () => {
 
     act(() =>
       ReactDOM.render(
-        <Example
-          anonymous_fn={instance.anonymousFunction}
-          array_buffer={arrayBuffer}
-          array_of_arrays={arrayOfArrays}
+        React.createElement(Example, {
+          anonymous_fn: instance.anonymousFunction,
+          array_buffer: arrayBuffer,
+          array_of_arrays: arrayOfArrays,
           // eslint-disable-next-line no-undef
-          big_int={BigInt(123)}
-          bound_fn={exampleFunction.bind(this)}
-          data_view={dataView}
-          date={new Date(123)}
-          fn={exampleFunction}
-          html_element={div}
-          immutable={immutableMap}
-          map={mapShallow}
-          map_of_maps={mapOfMaps}
-          object_of_objects={objectOfObjects}
-          react_element={<span />}
-          regexp={/abc/giu}
-          set={setShallow}
-          set_of_sets={setOfSets}
-          symbol={Symbol('symbol')}
-          typed_array={typedArray}
-        />,
+          big_int: BigInt(123),
+          bound_fn: exampleFunction.bind(this),
+          data_view: dataView,
+          date: new Date(123),
+          fn: exampleFunction,
+          html_element: div,
+          immutable: immutableMap,
+          map: mapShallow,
+          map_of_maps: mapOfMaps,
+          object_of_objects: objectOfObjects,
+          react_element: React.createElement('span'),
+          regexp: /abc/giu,
+          set: setShallow,
+          set_of_sets: setOfSets,
+          symbol: Symbol('symbol'),
+          typed_array: typedArray,
+        }),
         document.createElement('div'),
       ),
     );
@@ -213,7 +211,7 @@ describe('InspectedElementContext', () => {
     const inspectedElement = await read(id);
 
     expect(inspectedElement.props).toMatchInlineSnapshot(`
-      Object {
+      {
         "anonymous_fn": Dehydrated {
           "preview_short": ƒ () {},
           "preview_long": ƒ () {},
@@ -222,7 +220,7 @@ describe('InspectedElementContext', () => {
           "preview_short": ArrayBuffer(3),
           "preview_long": ArrayBuffer(3),
         },
-        "array_of_arrays": Array [
+        "array_of_arrays": [
           Dehydrated {
             "preview_short": Array(2),
             "preview_long": [Array(3), Array(0)],
@@ -252,7 +250,7 @@ describe('InspectedElementContext', () => {
           "preview_short": <div />,
           "preview_long": <div />,
         },
-        "immutable": Object {
+        "immutable": {
           "0": Dehydrated {
             "preview_short": Array(2),
             "preview_long": ["a", List(3)],
@@ -266,7 +264,7 @@ describe('InspectedElementContext', () => {
             "preview_long": ["c", Map(2)],
           },
         },
-        "map": Object {
+        "map": {
           "0": Dehydrated {
             "preview_short": Array(2),
             "preview_long": ["name", "Brian"],
@@ -276,7 +274,7 @@ describe('InspectedElementContext', () => {
             "preview_long": ["food", "sushi"],
           },
         },
-        "map_of_maps": Object {
+        "map_of_maps": {
           "0": Dehydrated {
             "preview_short": Array(2),
             "preview_long": ["first", Map(2)],
@@ -286,25 +284,39 @@ describe('InspectedElementContext', () => {
             "preview_long": ["second", Map(2)],
           },
         },
-        "object_of_objects": Object {
+        "object_of_objects": {
           "inner": Dehydrated {
             "preview_short": {…},
             "preview_long": {boolean: true, number: 123, string: "abc"},
           },
         },
-        "react_element": Dehydrated {
-          "preview_short": <span />,
-          "preview_long": <span />,
+        "react_element": {
+          "$$typeof": Dehydrated {
+            "preview_short": Symbol(react.element),
+            "preview_long": Symbol(react.element),
+          },
+          "_owner": null,
+          "_store": Dehydrated {
+            "preview_short": {…},
+            "preview_long": {},
+          },
+          "key": null,
+          "props": Dehydrated {
+            "preview_short": {…},
+            "preview_long": {},
+          },
+          "ref": null,
+          "type": "span",
         },
         "regexp": Dehydrated {
           "preview_short": /abc/giu,
           "preview_long": /abc/giu,
         },
-        "set": Object {
+        "set": {
           "0": "abc",
           "1": 123,
         },
-        "set_of_sets": Object {
+        "set_of_sets": {
           "0": Dehydrated {
             "preview_short": Set(3),
             "preview_long": Set(3) {"a", "b", "c"},
@@ -318,7 +330,7 @@ describe('InspectedElementContext', () => {
           "preview_short": Symbol(symbol),
           "preview_long": Symbol(symbol),
         },
-        "typed_array": Object {
+        "typed_array": {
           "0": 100,
           "1": -100,
           "2": 0,
@@ -338,7 +350,7 @@ describe('InspectedElementContext', () => {
 
     act(() =>
       ReactDOM.render(
-        <Example object={object} />,
+        React.createElement(Example, {object}),
         document.createElement('div'),
       ),
     );
@@ -347,8 +359,8 @@ describe('InspectedElementContext', () => {
     const inspectedElement = await read(id);
 
     expect(inspectedElement.props).toMatchInlineSnapshot(`
-      Object {
-        "object": Object {
+      {
+        "object": {
           "boolean": true,
           "number": 123,
           "string": "abc",
@@ -368,7 +380,7 @@ describe('InspectedElementContext', () => {
 
     act(() =>
       ReactDOM.render(
-        <Example object={object} />,
+        React.createElement(Example, {object}),
         document.createElement('div'),
       ),
     );
@@ -395,7 +407,7 @@ describe('InspectedElementContext', () => {
 
     act(() =>
       ReactDOM.render(
-        <Example iteratable={iteratable} />,
+        React.createElement(Example, {iteratable}),
         document.createElement('div'),
       ),
     );
@@ -404,13 +416,13 @@ describe('InspectedElementContext', () => {
     const inspectedElement = await read(id);
 
     expect(inspectedElement).toMatchInlineSnapshot(`
-      Object {
-        "context": Object {},
+      {
+        "context": {},
         "events": undefined,
         "hooks": null,
         "id": 2,
         "owners": null,
-        "props": Object {
+        "props": {
           "iteratable": Dehydrated {
             "preview_short": Generator,
             "preview_long": Generator,
@@ -450,7 +462,7 @@ describe('InspectedElementContext', () => {
 
     act(() =>
       ReactDOM.render(
-        <Example data={new CustomData()} />,
+        React.createElement(Example, {data: new CustomData()}),
         document.createElement('div'),
       ),
     );
@@ -459,14 +471,14 @@ describe('InspectedElementContext', () => {
     const inspectedElement = await read(id);
 
     expect(inspectedElement).toMatchInlineSnapshot(`
-      Object {
-        "context": Object {},
+      {
+        "context": {},
         "events": undefined,
         "hooks": null,
         "id": 2,
         "owners": null,
-        "props": Object {
-          "data": Object {
+        "props": {
+          "data": {
             "_number": 42,
             "number": 42,
           },
@@ -478,7 +490,7 @@ describe('InspectedElementContext', () => {
   });
 
   // @reactVersion >= 16.0
-  it('should support objects with with inherited keys', async () => {
+  it('should support objects with inherited keys', async () => {
     const Example = () => null;
 
     const base = Object.create(Object.prototype, {
@@ -542,21 +554,24 @@ describe('InspectedElementContext', () => {
     });
 
     act(() =>
-      ReactDOM.render(<Example data={object} />, document.createElement('div')),
+      ReactDOM.render(
+        React.createElement(Example, {data: object}),
+        document.createElement('div'),
+      ),
     );
 
     const id = ((store.getElementIDAtIndex(0): any): number);
     const inspectedElement = await read(id);
 
     expect(inspectedElement).toMatchInlineSnapshot(`
-      Object {
-        "context": Object {},
+      {
+        "context": {},
         "events": undefined,
         "hooks": null,
         "id": 2,
         "owners": null,
-        "props": Object {
-          "data": Object {
+        "props": {
+          "data": {
             "123": 3,
             "Symbol(enumerableSymbol)": 3,
             "Symbol(enumerableSymbolBase)": 1,
@@ -610,7 +625,7 @@ describe('InspectedElementContext', () => {
     const Example = ({data}) => null;
     act(() =>
       ReactDOM.render(
-        <Example data={testData} />,
+        React.createElement(Example, {data: testData}),
         document.createElement('div'),
       ),
     );
@@ -619,8 +634,8 @@ describe('InspectedElementContext', () => {
     const inspectedElement = await read(id);
 
     expect(inspectedElement.props).toMatchInlineSnapshot(`
-      Object {
-        "data": Object {
+      {
+        "data": {
           "a": undefined,
           "b": Infinity,
           "c": NaN,
@@ -636,8 +651,8 @@ describe('InspectedElementContext', () => {
 
     act(() =>
       ReactDOM.render(
-        <Example
-          nestedObject={{
+        React.createElement(Example, {
+          nestedObject: {
             a: {
               b: {
                 c: [
@@ -649,8 +664,8 @@ describe('InspectedElementContext', () => {
                 ],
               },
             },
-          }}
-        />,
+          },
+        }),
         document.createElement('div'),
       ),
     );
@@ -659,8 +674,8 @@ describe('InspectedElementContext', () => {
 
     let inspectedElement = await read(id);
     expect(inspectedElement.props).toMatchInlineSnapshot(`
-      Object {
-        "nestedObject": Object {
+      {
+        "nestedObject": {
           "a": Dehydrated {
             "preview_short": {…},
             "preview_long": {b: {…}},
@@ -671,10 +686,10 @@ describe('InspectedElementContext', () => {
 
     inspectedElement = await read(id, ['props', 'nestedObject', 'a']);
     expect(inspectedElement.props).toMatchInlineSnapshot(`
-      Object {
-        "nestedObject": Object {
-          "a": Object {
-            "b": Object {
+      {
+        "nestedObject": {
+          "a": {
+            "b": {
               "c": Dehydrated {
                 "preview_short": Array(1),
                 "preview_long": [{…}],
@@ -687,12 +702,12 @@ describe('InspectedElementContext', () => {
 
     inspectedElement = await read(id, ['props', 'nestedObject', 'a', 'b', 'c']);
     expect(inspectedElement.props).toMatchInlineSnapshot(`
-      Object {
-        "nestedObject": Object {
-          "a": Object {
-            "b": Object {
-              "c": Array [
-                Object {
+      {
+        "nestedObject": {
+          "a": {
+            "b": {
+              "c": [
+                {
                   "d": Dehydrated {
                     "preview_short": {…},
                     "preview_long": {e: {…}},
@@ -715,14 +730,14 @@ describe('InspectedElementContext', () => {
       'd',
     ]);
     expect(inspectedElement.props).toMatchInlineSnapshot(`
-      Object {
-        "nestedObject": Object {
-          "a": Object {
-            "b": Object {
-              "c": Array [
-                Object {
-                  "d": Object {
-                    "e": Object {},
+      {
+        "nestedObject": {
+          "a": {
+            "b": {
+              "c": [
+                {
+                  "d": {
+                    "e": {},
                   },
                 },
               ],
@@ -751,7 +766,7 @@ describe('InspectedElementContext', () => {
 
     act(() =>
       ReactDOM.render(
-        <Example nestedObject={nestedObject} />,
+        React.createElement(Example, {nestedObject}),
         document.createElement('div'),
       ),
     );
@@ -760,7 +775,7 @@ describe('InspectedElementContext', () => {
     const rendererID = ((store.getRendererIDForElement(id): any): number);
 
     const logSpy = jest.fn();
-    spyOn(console, 'log').and.callFake(logSpy);
+    jest.spyOn(console, 'log').mockImplementation(logSpy);
 
     // Should store the whole value (not just the hydrated parts)
     backendAPI.storeAsGlobal({
@@ -807,7 +822,7 @@ describe('InspectedElementContext', () => {
 
     act(() =>
       ReactDOM.render(
-        <Example nestedObject={nestedObject} />,
+        React.createElement(Example, {nestedObject}),
         document.createElement('div'),
       ),
     );
@@ -826,7 +841,7 @@ describe('InspectedElementContext', () => {
     jest.runOnlyPendingTimers();
     expect(global.mockClipboardCopy).toHaveBeenCalledTimes(1);
     expect(global.mockClipboardCopy).toHaveBeenCalledWith(
-      JSON.stringify(nestedObject),
+      JSON.stringify(nestedObject, undefined, 2),
     );
 
     global.mockClipboardCopy.mockReset();
@@ -842,7 +857,7 @@ describe('InspectedElementContext', () => {
     jest.runOnlyPendingTimers();
     expect(global.mockClipboardCopy).toHaveBeenCalledTimes(1);
     expect(global.mockClipboardCopy).toHaveBeenCalledWith(
-      JSON.stringify(nestedObject.a.b),
+      JSON.stringify(nestedObject.a.b, undefined, 2),
     );
   });
 
@@ -873,22 +888,21 @@ describe('InspectedElementContext', () => {
         xyz: 1,
       },
     });
-    // $FlowFixMe
     const bigInt = BigInt(123); // eslint-disable-line no-undef
 
     act(() =>
       ReactDOM.render(
-        <Example
-          arrayBuffer={arrayBuffer}
-          dataView={dataView}
-          map={map}
-          set={set}
-          mapOfMaps={mapOfMaps}
-          setOfSets={setOfSets}
-          typedArray={typedArray}
-          immutable={immutable}
-          bigInt={bigInt}
-        />,
+        React.createElement(Example, {
+          arrayBuffer: arrayBuffer,
+          dataView: dataView,
+          map: map,
+          set: set,
+          mapOfMaps: mapOfMaps,
+          setOfSets: setOfSets,
+          typedArray: typedArray,
+          immutable: immutable,
+          bigInt: bigInt,
+        }),
         document.createElement('div'),
       ),
     );
@@ -933,7 +947,7 @@ describe('InspectedElementContext', () => {
     jest.runOnlyPendingTimers();
     expect(global.mockClipboardCopy).toHaveBeenCalledTimes(1);
     expect(global.mockClipboardCopy).toHaveBeenCalledWith(
-      JSON.stringify({0: 100, 1: -100, 2: 0}),
+      JSON.stringify({0: 100, 1: -100, 2: 0}, undefined, 2),
     );
   });
 });

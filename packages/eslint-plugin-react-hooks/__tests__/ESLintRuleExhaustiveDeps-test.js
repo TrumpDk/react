@@ -1,13 +1,16 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
+ *
+ * @jest-environment node
  */
 
 'use strict';
 
-const ESLintTester = require('eslint').RuleTester;
+const ESLintTesterV7 = require('eslint-v7').RuleTester;
+const ESLintTesterV9 = require('eslint-v9').RuleTester;
 const ReactHooksESLintPlugin = require('eslint-plugin-react-hooks');
 const ReactHooksESLintRule = ReactHooksESLintPlugin.rules['exhaustive-deps'];
 
@@ -18,7 +21,7 @@ const ReactHooksESLintRule = ReactHooksESLintPlugin.rules['exhaustive-deps'];
 function normalizeIndent(strings) {
   const codeLines = strings[0].split('\n');
   const leftPadding = codeLines[1].match(/\s+/)[0];
-  return codeLines.map(line => line.substr(leftPadding.length)).join('\n');
+  return codeLines.map(line => line.slice(leftPadding.length)).join('\n');
 }
 
 // ***************************************************
@@ -1452,6 +1455,15 @@ const tests = {
         }
       `,
     },
+    {
+      code: normalizeIndent`
+        function MyComponent() {
+          useEffect(() => {
+            console.log('banana banana banana');
+          }, undefined);
+        }
+      `,
+    },
   ],
   invalid: [
     {
@@ -1525,8 +1537,7 @@ const tests = {
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [props.foo?.bar?.baz]',
+              desc: 'Update the dependencies array to be: [props.foo?.bar?.baz]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   useCallback(() => {
@@ -1630,7 +1641,7 @@ const tests = {
                     }, 1000);
                     return () => clearInterval(id);
                   }, [setCount]);
-        
+
                   return <h1>{count}</h1>;
                 }
               `,
@@ -2662,8 +2673,7 @@ const tests = {
             'Either include them or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [props.bar, props.foo]',
+              desc: 'Update the dependencies array to be: [props.bar, props.foo]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   const local = {};
@@ -2819,8 +2829,7 @@ const tests = {
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [color, props.foo.bar.baz]',
+              desc: 'Update the dependencies array to be: [color, props.foo.bar.baz]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   let color = {}
@@ -2884,8 +2893,7 @@ const tests = {
             'Either include them or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [props.foo.bar.baz, props.foo.fizz.bizz]',
+              desc: 'Update the dependencies array to be: [props.foo.bar.baz, props.foo.fizz.bizz]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   const fn = useCallback(() => {
@@ -3095,8 +3103,7 @@ const tests = {
             'Either include them or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [props.bar, props.foo]',
+              desc: 'Update the dependencies array to be: [props.bar, props.foo]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   useEffect(() => {
@@ -3127,8 +3134,7 @@ const tests = {
           // Don't alphabetize if it wasn't alphabetized in the first place.
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [c, a, g, b, e, d, f]',
+              desc: 'Update the dependencies array to be: [c, a, g, b, e, d, f]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   let a, b, c, d, e, f, g;
@@ -3159,8 +3165,7 @@ const tests = {
           // Alphabetize if it was alphabetized.
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [a, b, c, d, e, f, g]',
+              desc: 'Update the dependencies array to be: [a, b, c, d, e, f, g]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   let a, b, c, d, e, f, g;
@@ -3191,8 +3196,7 @@ const tests = {
           // Alphabetize if it was empty.
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [a, b, c, d, e, f, g]',
+              desc: 'Update the dependencies array to be: [a, b, c, d, e, f, g]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   let a, b, c, d, e, f, g;
@@ -3224,8 +3228,7 @@ const tests = {
             'Either include them or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [local, props.bar, props.foo]',
+              desc: 'Update the dependencies array to be: [local, props.bar, props.foo]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   const local = {};
@@ -3812,8 +3815,7 @@ const tests = {
             'Either include them or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [props.color, props.someOtherRefs]',
+              desc: 'Update the dependencies array to be: [props.color, props.someOtherRefs]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   const ref1 = useRef();
@@ -3853,8 +3855,7 @@ const tests = {
             "because mutating them doesn't re-render the component.",
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [props.someOtherRefs, props.color]',
+              desc: 'Update the dependencies array to be: [props.someOtherRefs, props.color]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   const ref1 = useRef();
@@ -3894,8 +3895,7 @@ const tests = {
             "because mutating them doesn't re-render the component.",
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [props.someOtherRefs, props.color]',
+              desc: 'Update the dependencies array to be: [props.someOtherRefs, props.color]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   const ref1 = useRef();
@@ -4287,8 +4287,7 @@ const tests = {
             `props inside useEffect.`,
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [skillsCount, props.isEditMode, props.toggleEditMode, props]',
+              desc: 'Update the dependencies array to be: [skillsCount, props.isEditMode, props.toggleEditMode, props]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   const [skillsCount] = useState();
@@ -4677,17 +4676,8 @@ const tests = {
           return <div ref={myRef} />;
         }
       `,
-      output: `
-        function MyComponent() {
-          const myRef = useRef();
-          useLayoutEffect_SAFE_FOR_SSR(() => {
-            const handleMove = () => {};
-            myRef.current.addEventListener('mousemove', handleMove);
-            return () => myRef.current.removeEventListener('mousemove', handleMove);
-          });
-          return <div ref={myRef} />;
-        }
-      `,
+      // No changes
+      output: null,
       errors: [
         `The ref value 'myRef.current' will likely have changed by the time ` +
           `this effect cleanup function runs. If this ref points to a node ` +
@@ -4719,8 +4709,7 @@ const tests = {
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [local1, local3, local4]',
+              desc: 'Update the dependencies array to be: [local1, local3, local4]',
               output: normalizeIndent`
                 function MyComponent() {
                   const local1 = 42;
@@ -5562,8 +5551,7 @@ const tests = {
           // the easy fix and you can't just move it into effect.
           suggestions: [
             {
-              desc:
-                "Wrap the definition of 'handleNext' in its own useCallback() Hook.",
+              desc: "Wrap the definition of 'handleNext' in its own useCallback() Hook.",
               output: normalizeIndent`
                 function MyComponent(props) {
                   let [, setState] = useState();
@@ -5737,8 +5725,7 @@ const tests = {
           // because they are only referenced outside the effect.
           suggestions: [
             {
-              desc:
-                "Wrap the definition of 'handleNext2' in its own useCallback() Hook.",
+              desc: "Wrap the definition of 'handleNext2' in its own useCallback() Hook.",
               output: normalizeIndent`
                 function MyComponent(props) {
                   function handleNext1() {
@@ -5787,8 +5774,7 @@ const tests = {
           // because they are only referenced outside the effect.
           suggestions: [
             {
-              desc:
-                "Wrap the definition of 'handleNext3' in its own useCallback() Hook.",
+              desc: "Wrap the definition of 'handleNext3' in its own useCallback() Hook.",
               output: normalizeIndent`
                 function MyComponent(props) {
                   function handleNext1() {
@@ -5862,8 +5848,7 @@ const tests = {
             "definition of 'handleNext1' in its own useCallback() Hook.",
           suggestions: [
             {
-              desc:
-                "Wrap the definition of 'handleNext1' in its own useCallback() Hook.",
+              desc: "Wrap the definition of 'handleNext1' in its own useCallback() Hook.",
               output: normalizeIndent`
                 function MyComponent(props) {
                   const handleNext1 = useCallback(() => {
@@ -5892,8 +5877,7 @@ const tests = {
             "definition of 'handleNext1' in its own useCallback() Hook.",
           suggestions: [
             {
-              desc:
-                "Wrap the definition of 'handleNext1' in its own useCallback() Hook.",
+              desc: "Wrap the definition of 'handleNext1' in its own useCallback() Hook.",
               output: normalizeIndent`
                 function MyComponent(props) {
                   const handleNext1 = useCallback(() => {
@@ -5959,8 +5943,7 @@ const tests = {
           // it only wraps the first definition. But seems ok.
           suggestions: [
             {
-              desc:
-                "Wrap the definition of 'handleNext' in its own useCallback() Hook.",
+              desc: "Wrap the definition of 'handleNext' in its own useCallback() Hook.",
               output: normalizeIndent`
                 function MyComponent(props) {
                   let handleNext = useCallback(() => {
@@ -6493,8 +6476,7 @@ const tests = {
             `find the parent component that defines it and wrap that definition in useCallback.`,
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [fetchPodcasts, fetchPodcasts2, id]',
+              desc: 'Update the dependencies array to be: [fetchPodcasts, fetchPodcasts2, id]',
               output: normalizeIndent`
                 function Podcasts({ fetchPodcasts, fetchPodcasts2, id }) {
                   let [podcasts, setPodcasts] = useState(null);
@@ -6759,7 +6741,7 @@ const tests = {
             '  }\n' +
             '  fetchData();\n' +
             `}, [someId]); // Or [] if effect doesn't need props or state\n\n` +
-            'Learn more about data fetching with Hooks: https://reactjs.org/link/hooks-data-fetching',
+            'Learn more about data fetching with Hooks: https://react.dev/link/hooks-data-fetching',
           suggestions: undefined,
         },
       ],
@@ -6783,7 +6765,7 @@ const tests = {
             '  }\n' +
             '  fetchData();\n' +
             `}, [someId]); // Or [] if effect doesn't need props or state\n\n` +
-            'Learn more about data fetching with Hooks: https://reactjs.org/link/hooks-data-fetching',
+            'Learn more about data fetching with Hooks: https://react.dev/link/hooks-data-fetching',
           suggestions: undefined,
         },
       ],
@@ -7113,6 +7095,19 @@ const tests = {
           message:
             "React Hook useEffect has a missing dependency: 'local'. " +
             'Either include it or remove the dependency array.',
+          suggestions: [
+            {
+              desc: 'Update the dependencies array to be: [local]',
+              output: normalizeIndent`
+                function MyComponent() {
+                  const local = {};
+                  useEffect(() => {
+                    console.log(local);
+                  }, [local]);
+                }
+              `,
+            },
+          ],
         },
       ],
       // Keep this until major IDEs and VS Code FB ESLint plugin support Suggestions API.
@@ -7135,8 +7130,7 @@ const tests = {
             'Either include them or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [foo.bar, props.foo.bar]',
+              desc: 'Update the dependencies array to be: [foo.bar, props.foo.bar]',
               output: normalizeIndent`
                 function MyComponent(props) {
                   let foo = {}
@@ -7630,6 +7624,62 @@ const tests = {
   ],
 };
 
+if (__EXPERIMENTAL__) {
+  tests.valid = [
+    ...tests.valid,
+    {
+      code: normalizeIndent`
+        function MyComponent({ theme }) {
+          const onStuff = useEffectEvent(() => {
+            showNotification(theme);
+          });
+          useEffect(() => {
+            onStuff();
+          }, []);
+        }
+      `,
+    },
+  ];
+
+  tests.invalid = [
+    ...tests.invalid,
+    {
+      code: normalizeIndent`
+        function MyComponent({ theme }) {
+          const onStuff = useEffectEvent(() => {
+            showNotification(theme);
+          });
+          useEffect(() => {
+            onStuff();
+          }, [onStuff]);
+        }
+      `,
+      errors: [
+        {
+          message:
+            'Functions returned from `useEffectEvent` must not be included in the dependency array. ' +
+            'Remove `onStuff` from the list.',
+          suggestions: [
+            {
+              desc: 'Remove the dependency `onStuff`',
+              output: normalizeIndent`
+                function MyComponent({ theme }) {
+                  const onStuff = useEffectEvent(() => {
+                    showNotification(theme);
+                  });
+                  useEffect(() => {
+                    onStuff();
+                  }, []);
+                }
+              `,
+            },
+          ],
+        },
+      ],
+    },
+  ];
+}
+
 // Tests that are only valid/invalid across parsers supporting Flow
 const testsFlow = {
   valid: [
@@ -7700,6 +7750,43 @@ const testsTypescript = {
             const bar = {x: 2};
             const baz = bar as typeof foo;
             console.log(baz);
+          }, []);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function App(props) {
+          React.useEffect(() => {
+            console.log(props.test);
+          }, [props.test] as const);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function App(props) {
+          React.useEffect(() => {
+            console.log(props.test);
+          }, [props.test] as any);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function App(props) {
+          React.useEffect((() => {
+            console.log(props.test);
+          }) as any, [props.test]);
+        }
+      `,
+    },
+    {
+      code: normalizeIndent`
+        function useMyThing<T>(): void {
+          useEffect(() => {
+            let foo: T;
+            console.log(foo);
           }, []);
         }
       `,
@@ -7789,8 +7876,7 @@ const testsTypescript = {
             'Either include them or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [pizza.crust, pizza?.toppings]',
+              desc: 'Update the dependencies array to be: [pizza.crust, pizza?.toppings]',
               output: normalizeIndent`
                 function MyComponent() {
                   const pizza = {};
@@ -7925,8 +8011,7 @@ const testsTypescript = {
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [props.upperViewHeight]',
+              desc: 'Update the dependencies array to be: [props.upperViewHeight]',
               output: normalizeIndent`
                 function Example(props) {
                   useEffect(() => {
@@ -7957,8 +8042,7 @@ const testsTypescript = {
             'Either include it or remove the dependency array.',
           suggestions: [
             {
-              desc:
-                'Update the dependencies array to be: [props?.upperViewHeight]',
+              desc: 'Update the dependencies array to be: [props?.upperViewHeight]',
               output: normalizeIndent`
                 function Example(props) {
                   useEffect(() => {
@@ -8140,13 +8224,22 @@ if (!process.env.CI) {
   testsTypescript.invalid = testsTypescript.invalid.filter(predicate);
 }
 
-describe('react-hooks', () => {
-  const parserOptions = {
+describe('rules-of-hooks/exhaustive-deps', () => {
+  const parserOptionsV7 = {
     ecmaFeatures: {
       jsx: true,
     },
     ecmaVersion: 6,
     sourceType: 'module',
+  };
+  const languageOptionsV9 = {
+    ecmaVersion: 6,
+    sourceType: 'module',
+    parserOptions: {
+      ecmaFeatures: {
+        jsx: true,
+      },
+    },
   };
 
   const testsBabelEslint = {
@@ -8154,16 +8247,22 @@ describe('react-hooks', () => {
     invalid: [...testsFlow.invalid, ...tests.invalid],
   };
 
-  new ESLintTester({
+  new ESLintTesterV7({
     parser: require.resolve('babel-eslint'),
-    parserOptions,
-  }).run('parser: babel-eslint', ReactHooksESLintRule, testsBabelEslint);
-
-  new ESLintTester({
-    parser: require.resolve('@babel/eslint-parser'),
-    parserOptions,
+    parserOptions: parserOptionsV7,
   }).run(
-    'parser: @babel/eslint-parser',
+    'eslint: v7, parser: babel-eslint',
+    ReactHooksESLintRule,
+    testsBabelEslint
+  );
+
+  new ESLintTesterV9({
+    languageOptions: {
+      ...languageOptionsV9,
+      parser: require('@babel/eslint-parser'),
+    },
+  }).run(
+    'eslint: v9, parser: @babel/eslint-parser',
     ReactHooksESLintRule,
     testsBabelEslint
   );
@@ -8173,49 +8272,119 @@ describe('react-hooks', () => {
     invalid: [...testsTypescript.invalid, ...tests.invalid],
   };
 
-  new ESLintTester({
+  new ESLintTesterV7({
     parser: require.resolve('@typescript-eslint/parser-v2'),
-    parserOptions,
+    parserOptions: parserOptionsV7,
   }).run(
-    'parser: @typescript-eslint/parser@2.x',
+    'eslint: v7, parser: @typescript-eslint/parser@2.x',
     ReactHooksESLintRule,
     testsTypescriptEslintParser
   );
 
-  new ESLintTester({
+  new ESLintTesterV9({
+    languageOptions: {
+      ...languageOptionsV9,
+      parser: require('@typescript-eslint/parser-v2'),
+    },
+  }).run(
+    'eslint: v9, parser: @typescript-eslint/parser@2.x',
+    ReactHooksESLintRule,
+    testsTypescriptEslintParser
+  );
+
+  new ESLintTesterV7({
     parser: require.resolve('@typescript-eslint/parser-v3'),
-    parserOptions,
+    parserOptions: parserOptionsV7,
   }).run(
-    'parser: @typescript-eslint/parser@3.x',
+    'eslint: v7, parser: @typescript-eslint/parser@3.x',
     ReactHooksESLintRule,
     testsTypescriptEslintParser
   );
 
-  new ESLintTester({
-    parser: require.resolve('@typescript-eslint/parser-v4'),
-    parserOptions,
-  }).run('parser: @typescript-eslint/parser@4.x', ReactHooksESLintRule, {
-    valid: [
-      ...testsTypescriptEslintParserV4.valid,
-      ...testsTypescriptEslintParser.valid,
-    ],
-    invalid: [
-      ...testsTypescriptEslintParserV4.invalid,
-      ...testsTypescriptEslintParser.invalid,
-    ],
-  });
+  new ESLintTesterV9({
+    languageOptions: {
+      ...languageOptionsV9,
+      parser: require('@typescript-eslint/parser-v3'),
+    },
+  }).run(
+    'eslint: v9, parser: @typescript-eslint/parser@3.x',
+    ReactHooksESLintRule,
+    testsTypescriptEslintParser
+  );
 
-  new ESLintTester({
+  new ESLintTesterV7({
+    parser: require.resolve('@typescript-eslint/parser-v4'),
+    parserOptions: parserOptionsV7,
+  }).run(
+    'eslint: v7, parser: @typescript-eslint/parser@4.x',
+    ReactHooksESLintRule,
+    {
+      valid: [
+        ...testsTypescriptEslintParserV4.valid,
+        ...testsTypescriptEslintParser.valid,
+      ],
+      invalid: [
+        ...testsTypescriptEslintParserV4.invalid,
+        ...testsTypescriptEslintParser.invalid,
+      ],
+    }
+  );
+
+  new ESLintTesterV9({
+    languageOptions: {
+      ...languageOptionsV9,
+      parser: require('@typescript-eslint/parser-v4'),
+    },
+  }).run(
+    'eslint: v9, parser: @typescript-eslint/parser@4.x',
+    ReactHooksESLintRule,
+    {
+      valid: [
+        ...testsTypescriptEslintParserV4.valid,
+        ...testsTypescriptEslintParser.valid,
+      ],
+      invalid: [
+        ...testsTypescriptEslintParserV4.invalid,
+        ...testsTypescriptEslintParser.invalid,
+      ],
+    }
+  );
+
+  new ESLintTesterV7({
     parser: require.resolve('@typescript-eslint/parser-v5'),
-    parserOptions,
-  }).run('parser: @typescript-eslint/parser@^5.0.0-0', ReactHooksESLintRule, {
-    valid: [
-      ...testsTypescriptEslintParserV4.valid,
-      ...testsTypescriptEslintParser.valid,
-    ],
-    invalid: [
-      ...testsTypescriptEslintParserV4.invalid,
-      ...testsTypescriptEslintParser.invalid,
-    ],
-  });
+    parserOptions: parserOptionsV7,
+  }).run(
+    'eslint: v7, parser: @typescript-eslint/parser@^5.0.0-0',
+    ReactHooksESLintRule,
+    {
+      valid: [
+        ...testsTypescriptEslintParserV4.valid,
+        ...testsTypescriptEslintParser.valid,
+      ],
+      invalid: [
+        ...testsTypescriptEslintParserV4.invalid,
+        ...testsTypescriptEslintParser.invalid,
+      ],
+    }
+  );
+
+  new ESLintTesterV9({
+    languageOptions: {
+      ...languageOptionsV9,
+      parser: require('@typescript-eslint/parser-v5'),
+    },
+  }).run(
+    'eslint: v9, parser: @typescript-eslint/parser@^5.0.0-0',
+    ReactHooksESLintRule,
+    {
+      valid: [
+        ...testsTypescriptEslintParserV4.valid,
+        ...testsTypescriptEslintParser.valid,
+      ],
+      invalid: [
+        ...testsTypescriptEslintParserV4.invalid,
+        ...testsTypescriptEslintParser.invalid,
+      ],
+    }
+  );
 });

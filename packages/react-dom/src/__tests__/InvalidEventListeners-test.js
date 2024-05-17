@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -9,17 +9,19 @@
 
 'use strict';
 
-jest.mock('../events/isEventSupported');
+jest.mock('react-dom-bindings/src/events/isEventSupported');
 
 describe('InvalidEventListeners', () => {
   let React;
-  let ReactDOM;
+  let ReactDOMClient;
+  let act;
   let container;
 
   beforeEach(() => {
     jest.resetModules();
     React = require('react');
-    ReactDOM = require('react-dom');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
 
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -30,15 +32,18 @@ describe('InvalidEventListeners', () => {
     container = null;
   });
 
-  it('should prevent non-function listeners, at dispatch', () => {
-    let node;
-    expect(() => {
-      node = ReactDOM.render(<div onClick="not a function" />, container);
+  it('should prevent non-function listeners, at dispatch', async () => {
+    const root = ReactDOMClient.createRoot(container);
+    await expect(async () => {
+      await act(() => {
+        root.render(<div onClick="not a function" />);
+      });
     }).toErrorDev(
       'Expected `onClick` listener to be a function, instead got a value of `string` type.',
     );
+    const node = container.firstChild;
 
-    spyOnProd(console, 'error');
+    console.error = jest.fn();
 
     const uncaughtErrors = [];
     function handleWindowError(e) {
@@ -63,21 +68,31 @@ describe('InvalidEventListeners', () => {
       }),
     );
 
-    if (!__DEV__) {
-      expect(console.error).toHaveBeenCalledTimes(1);
-      expect(console.error.calls.argsFor(0)[0]).toMatch(
-        'Expected `onClick` listener to be a function, ' +
-          'instead got a value of `string` type.',
-      );
-    }
-  });
-
-  it('should not prevent null listeners, at dispatch', () => {
-    const node = ReactDOM.render(<div onClick={null} />, container);
-    node.dispatchEvent(
-      new MouseEvent('click', {
-        bubbles: true,
+    expect(console.error).toHaveBeenCalledTimes(1);
+    expect(console.error.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          message:
+            'Expected `onClick` listener to be a function, instead got a value of `string` type.',
+        }),
+        type: 'unhandled exception',
       }),
     );
+  });
+
+  it('should not prevent null listeners, at dispatch', async () => {
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(<div onClick={null} />);
+    });
+
+    const node = container.firstChild;
+    await act(() => {
+      node.dispatchEvent(
+        new MouseEvent('click', {
+          bubbles: true,
+        }),
+      );
+    });
   });
 });

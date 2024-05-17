@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -19,9 +19,10 @@ import {
 } from 'react-server/src/ReactFizzServer';
 
 import {
-  createResponseState,
+  createResumableState,
+  createRenderState,
   createRootFormatContext,
-} from './ReactDOMServerLegacyFormatConfig';
+} from 'react-dom-bindings/src/server/ReactFizzConfigDOMLegacy';
 
 type ServerOptions = {
   identifierPrefix?: string,
@@ -41,12 +42,14 @@ function renderToStringImpl(
   let fatalError = null;
   let result = '';
   const destination = {
+    // $FlowFixMe[missing-local-annot]
     push(chunk) {
       if (chunk !== null) {
         result += chunk;
       }
       return true;
     },
+    // $FlowFixMe[missing-local-annot]
     destroy(error) {
       didFatal = true;
       fatalError = error;
@@ -57,17 +60,20 @@ function renderToStringImpl(
   function onShellReady() {
     readyToStream = true;
   }
+  const resumableState = createResumableState(
+    options ? options.identifierPrefix : undefined,
+    undefined,
+  );
   const request = createRequest(
     children,
-    createResponseState(
-      generateStaticMarkup,
-      options ? options.identifierPrefix : undefined,
-    ),
+    resumableState,
+    createRenderState(resumableState, generateStaticMarkup),
     createRootFormatContext(),
     Infinity,
     onError,
     undefined,
     onShellReady,
+    undefined,
     undefined,
     undefined,
   );

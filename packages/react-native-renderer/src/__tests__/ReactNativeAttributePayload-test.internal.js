@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -204,6 +204,19 @@ describe('ReactNativeAttributePayload', () => {
     ).toEqual({foo: null}); // this should ideally be null. heuristic.
   });
 
+  it('handles attributes defined multiple times', () => {
+    const validAttributes = {foo: true, style: {foo: true}};
+    expect(diff({}, {foo: 4, style: {foo: 2}}, validAttributes)).toEqual({
+      foo: 2,
+    });
+    expect(diff({foo: 4}, {style: {foo: 2}}, validAttributes)).toEqual({
+      foo: 2,
+    });
+    expect(diff({style: {foo: 2}}, {foo: 4}, validAttributes)).toEqual({
+      foo: 4,
+    });
+  });
+
   // Function properties are just markers to native that events should be sent.
   it('should convert functions to booleans', () => {
     // Note that if the property changes from one function to another, we don't
@@ -211,19 +224,19 @@ describe('ReactNativeAttributePayload', () => {
     expect(
       diff(
         {
-          a: function() {
+          a: function () {
             return 1;
           },
-          b: function() {
+          b: function () {
             return 2;
           },
           c: 3,
         },
         {
-          b: function() {
+          b: function () {
             return 9;
           },
-          c: function() {
+          c: function () {
             return 3;
           },
         },
@@ -236,12 +249,12 @@ describe('ReactNativeAttributePayload', () => {
     expect(
       diff(
         {
-          a: function() {
+          a: function () {
             return 1;
           },
         },
         {
-          a: function() {
+          a: function () {
             return 9;
           },
         },
@@ -255,14 +268,14 @@ describe('ReactNativeAttributePayload', () => {
       diff(
         {
           wrapper: {
-            a: function() {
+            a: function () {
               return 1;
             },
           },
         },
         {
           wrapper: {
-            a: function() {
+            a: function () {
               return 9;
             },
           },

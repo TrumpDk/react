@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -18,6 +18,7 @@ let performance;
 let cancelCallback;
 let scheduleCallback;
 let requestPaint;
+let shouldYield;
 let NormalPriority;
 
 // The Scheduler implementation uses browser APIs like `MessageChannel` and
@@ -42,6 +43,7 @@ describe('SchedulerBrowser', () => {
     scheduleCallback = Scheduler.unstable_scheduleCallback;
     NormalPriority = Scheduler.unstable_NormalPriority;
     requestPaint = Scheduler.unstable_requestPaint;
+    shouldYield = Scheduler.unstable_shouldYield;
   });
 
   afterEach(() => {
@@ -98,23 +100,6 @@ describe('SchedulerBrowser', () => {
       this.port1 = port1;
       this.port2 = port2;
     };
-
-    const scheduling = {
-      isInputPending(options) {
-        if (this !== scheduling) {
-          throw new Error(
-            'isInputPending called with incorrect `this` context',
-          );
-        }
-
-        return (
-          hasPendingDiscreteEvent ||
-          (options && options.includeContinuous && hasPendingContinuousEvent)
-        );
-      },
-    };
-
-    global.navigator = {scheduling};
 
     function ensureLogIsEmpty() {
       if (eventLog.length !== 0) {
@@ -216,7 +201,7 @@ describe('SchedulerBrowser', () => {
     runtime.assertLog([
       'Message Event',
       'Task',
-      'Yield at 5ms',
+      gate(flags => (flags.www ? 'Yield at 10ms' : 'Yield at 5ms')),
       'Post Message',
     ]);
 
@@ -262,7 +247,8 @@ describe('SchedulerBrowser', () => {
     });
     runtime.assertLog(['Post Message']);
     cancelCallback(task);
-    runtime.assertLog([]);
+    runtime.fireMessageEvent();
+    runtime.assertLog(['Message Event']);
   });
 
   it('throws when a task errors then continues in a new event', () => {
@@ -318,161 +304,35 @@ describe('SchedulerBrowser', () => {
     runtime.assertLog(['Message Event', 'B']);
   });
 
-  it('when isInputPending is available, we can wait longer before yielding', () => {
-    function blockUntilSchedulerAsksToYield() {
-      while (!Scheduler.unstable_shouldYield()) {
-        runtime.advanceTime(1);
-      }
-      runtime.log(`Yield at ${performance.now()}ms`);
-    }
-
-    // First show what happens when we don't request a paint
+  it('yielding continues in a new task regardless of how much time is remaining', () => {
     scheduleCallback(NormalPriority, () => {
-      runtime.log('Task with no pending input');
-      blockUntilSchedulerAsksToYield();
+      runtime.log('Original Task');
+      runtime.log('shouldYield: ' + shouldYield());
+      runtime.log('Return a continuation');
+      return () => {
+        runtime.log('Continuation Task');
+      };
     });
     runtime.assertLog(['Post Message']);
 
     runtime.fireMessageEvent();
     runtime.assertLog([
       'Message Event',
-      'Task with no pending input',
-      // Even though there's no input, eventually Scheduler will yield
-      // regardless in case there's a pending main thread task we don't know
-      // about, like a network event.
-      gate(flags =>
-        flags.enableIsInputPending
-          ? 'Yield at 300ms'
-          : // When isInputPending is disabled, we always yield quickly
-            'Yield at 5ms',
-      ),
+      'Original Task',
+      // Immediately before returning a continuation, `shouldYield` returns
+      // false, which means there must be time remaining in the frame.
+      'shouldYield: false',
+      'Return a continuation',
+
+      // The continuation should be scheduled in a separate macrotask even
+      // though there's time remaining.
+      'Post Message',
     ]);
 
-    runtime.resetTime();
-
-    // Now do the same thing, but while the task is running, simulate an
-    // input event.
-    scheduleCallback(NormalPriority, () => {
-      runtime.log('Task with pending input');
-      runtime.scheduleDiscreteEvent();
-      blockUntilSchedulerAsksToYield();
-    });
-    runtime.assertLog(['Post Message']);
+    // No time has elapsed
+    expect(performance.now()).toBe(0);
 
     runtime.fireMessageEvent();
-    runtime.assertLog([
-      'Message Event',
-      'Task with pending input',
-      // This time we yielded quickly to unblock the discrete event.
-      'Yield at 5ms',
-      'Discrete Event',
-    ]);
-  });
-
-  it(
-    'isInputPending will also check for continuous inputs, but after a ' +
-      'slightly larger threshold',
-    () => {
-      function blockUntilSchedulerAsksToYield() {
-        while (!Scheduler.unstable_shouldYield()) {
-          runtime.advanceTime(1);
-        }
-        runtime.log(`Yield at ${performance.now()}ms`);
-      }
-
-      // First show what happens when we don't request a paint
-      scheduleCallback(NormalPriority, () => {
-        runtime.log('Task with no pending input');
-        blockUntilSchedulerAsksToYield();
-      });
-      runtime.assertLog(['Post Message']);
-
-      runtime.fireMessageEvent();
-      runtime.assertLog([
-        'Message Event',
-        'Task with no pending input',
-        // Even though there's no input, eventually Scheduler will yield
-        // regardless in case there's a pending main thread task we don't know
-        // about, like a network event.
-        gate(flags =>
-          flags.enableIsInputPending
-            ? 'Yield at 300ms'
-            : // When isInputPending is disabled, we always yield quickly
-              'Yield at 5ms',
-        ),
-      ]);
-
-      runtime.resetTime();
-
-      // Now do the same thing, but while the task is running, simulate a
-      // continuous input event.
-      scheduleCallback(NormalPriority, () => {
-        runtime.log('Task with continuous input');
-        runtime.scheduleContinuousEvent();
-        blockUntilSchedulerAsksToYield();
-      });
-      runtime.assertLog(['Post Message']);
-
-      runtime.fireMessageEvent();
-      runtime.assertLog([
-        'Message Event',
-        'Task with continuous input',
-        // This time we yielded quickly to unblock the continuous event. But not
-        // as quickly as for a discrete event.
-        gate(flags =>
-          flags.enableIsInputPending
-            ? 'Yield at 50ms'
-            : // When isInputPending is disabled, we always yield quickly
-              'Yield at 5ms',
-        ),
-        'Continuous Event',
-      ]);
-    },
-  );
-
-  it('requestPaint forces a yield at the end of the next frame interval', () => {
-    function blockUntilSchedulerAsksToYield() {
-      while (!Scheduler.unstable_shouldYield()) {
-        runtime.advanceTime(1);
-      }
-      runtime.log(`Yield at ${performance.now()}ms`);
-    }
-
-    // First show what happens when we don't request a paint
-    scheduleCallback(NormalPriority, () => {
-      runtime.log('Task with no paint');
-      blockUntilSchedulerAsksToYield();
-    });
-    runtime.assertLog(['Post Message']);
-
-    runtime.fireMessageEvent();
-    runtime.assertLog([
-      'Message Event',
-      'Task with no paint',
-      gate(flags =>
-        flags.enableIsInputPending
-          ? 'Yield at 300ms'
-          : // When isInputPending is disabled, we always yield quickly
-            'Yield at 5ms',
-      ),
-    ]);
-
-    runtime.resetTime();
-
-    // Now do the same thing, but call requestPaint inside the task
-    scheduleCallback(NormalPriority, () => {
-      runtime.log('Task with paint');
-      requestPaint();
-      blockUntilSchedulerAsksToYield();
-    });
-    runtime.assertLog(['Post Message']);
-
-    runtime.fireMessageEvent();
-    runtime.assertLog([
-      'Message Event',
-      'Task with paint',
-      // This time we yielded quickly (5ms) because we requested a paint.
-      'Yield at 5ms',
-    ]);
+    runtime.assertLog(['Message Event', 'Continuation Task']);
   });
 });

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,23 +7,19 @@
  * @flow
  */
 
-// Export all exports so that they're available in tests.
-// We can't use export * from in Flow for some reason.
+export {default as __DOM_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE} from './src/ReactDOMSharedInternals';
 export {
-  __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED,
   createPortal,
-  createRoot,
-  hydrateRoot,
-  findDOMNode,
   flushSync,
-  hydrate,
-  render,
-  unmountComponentAtNode,
+  prefetchDNS,
+  preconnect,
+  preload,
+  preloadModule,
+  preinit,
+  preinitModule,
+  requestFormReset,
   unstable_batchedUpdates,
-  unstable_createEventHandle,
-  unstable_flushControlled,
-  unstable_isNewReconciler,
-  unstable_renderSubtreeIntoContainer,
-  unstable_runWithPriority, // DO NOT USE: Temporarily exposed to migrate off of Scheduler.runWithPriority.
+  useFormState,
+  useFormStatus,
   version,
-} from './src/client/ReactDOM';
+} from './src/shared/ReactDOM';

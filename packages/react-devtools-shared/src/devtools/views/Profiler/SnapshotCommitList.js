@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -20,7 +20,7 @@ import Tooltip from './Tooltip';
 
 import styles from './SnapshotCommitList.css';
 
-export type ItemData = {|
+export type ItemData = {
   commitTimes: Array<number>,
   filteredCommitIndices: Array<number>,
   maxDuration: number,
@@ -30,17 +30,17 @@ export type ItemData = {|
   setHoveredCommitIndex: (index: number) => void,
   startCommitDrag: (newDragState: DragState) => void,
   totalDurations: Array<number>,
-|};
+};
 
-type Props = {|
-  commitData: CommitDataFrontend,
+type Props = {
+  commitData: $ReadOnlyArray<CommitDataFrontend>,
   commitTimes: Array<number>,
   filteredCommitIndices: Array<number>,
   selectedCommitIndex: number | null,
   selectedFilteredCommitIndex: number | null,
   selectCommitIndex: (index: number) => void,
   totalDurations: Array<number>,
-|};
+};
 
 export default function SnapshotCommitList({
   commitData,
@@ -50,7 +50,7 @@ export default function SnapshotCommitList({
   selectedFilteredCommitIndex,
   selectCommitIndex,
   totalDurations,
-}: Props) {
+}: Props): React.Node {
   return (
     <AutoSizer>
       {({height, width}) => (
@@ -70,8 +70,8 @@ export default function SnapshotCommitList({
   );
 }
 
-type ListProps = {|
-  commitData: CommitDataFrontend,
+type ListProps = {
+  commitData: $ReadOnlyArray<CommitDataFrontend>,
   commitTimes: Array<number>,
   height: number,
   filteredCommitIndices: Array<number>,
@@ -80,7 +80,7 @@ type ListProps = {|
   selectCommitIndex: (index: number) => void,
   totalDurations: Array<number>,
   width: number,
-|};
+};
 
 type DragState = {
   commitIndex: number,
@@ -99,6 +99,7 @@ function List({
   totalDurations,
   width,
 }: ListProps) {
+  // $FlowFixMe[incompatible-use]
   const listRef = useRef<FixedSizeList<ItemData> | null>(null);
   const divRef = useRef<HTMLDivElement | null>(null);
   const prevCommitIndexRef = useRef<number | null>(null);

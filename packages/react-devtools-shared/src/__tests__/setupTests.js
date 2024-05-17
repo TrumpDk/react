@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -13,6 +13,7 @@ import type {
   BackendBridge,
   FrontendBridge,
 } from 'react-devtools-shared/src/bridge';
+const {getTestFlags} = require('../../../../scripts/jest/TestFlags');
 
 // Argument is serialized when passed from jest-cli script through to setupTests.
 const compactConsole = process.env.compactConsole === 'true';
@@ -32,8 +33,77 @@ if (compactConsole) {
   global.console = new CustomConsole(process.stdout, process.stderr, formatter);
 }
 
-const env = jasmine.getEnv();
-env.beforeEach(() => {
+const expectTestToFail = async (callback, error) => {
+  if (callback.length > 0) {
+    throw Error(
+      'Gated test helpers do not support the `done` callback. Return a ' +
+        'promise instead.',
+    );
+  }
+  try {
+    const maybePromise = callback();
+    if (
+      maybePromise !== undefined &&
+      maybePromise !== null &&
+      typeof maybePromise.then === 'function'
+    ) {
+      await maybePromise;
+    }
+  } catch (testError) {
+    return;
+  }
+  throw error;
+};
+
+const gatedErrorMessage = 'Gated test was expected to fail, but it passed.';
+global._test_gate = (gateFn, testName, callback) => {
+  let shouldPass;
+  try {
+    const flags = getTestFlags();
+    shouldPass = gateFn(flags);
+  } catch (e) {
+    test(testName, () => {
+      throw e;
+    });
+    return;
+  }
+  if (shouldPass) {
+    test(testName, callback);
+  } else {
+    const error = new Error(gatedErrorMessage);
+    Error.captureStackTrace(error, global._test_gate);
+    test(`[GATED, SHOULD FAIL] ${testName}`, () =>
+      expectTestToFail(callback, error));
+  }
+};
+global._test_gate_focus = (gateFn, testName, callback) => {
+  let shouldPass;
+  try {
+    const flags = getTestFlags();
+    shouldPass = gateFn(flags);
+  } catch (e) {
+    test.only(testName, () => {
+      throw e;
+    });
+    return;
+  }
+  if (shouldPass) {
+    test.only(testName, callback);
+  } else {
+    const error = new Error(gatedErrorMessage);
+    Error.captureStackTrace(error, global._test_gate_focus);
+    test.only(`[GATED, SHOULD FAIL] ${testName}`, () =>
+      expectTestToFail(callback, error));
+  }
+};
+
+// Dynamic version of @gate pragma
+global.gate = fn => {
+  const flags = getTestFlags();
+  return fn(flags);
+};
+
+beforeEach(() => {
   global.mockClipboardCopy = jest.fn();
 
   // Test environment doesn't support document methods like execCommand()
@@ -52,18 +122,25 @@ env.beforeEach(() => {
   const {installHook} = require('react-devtools-shared/src/hook');
   const {
     getDefaultComponentFilters,
-    saveComponentFilters,
-    setShowInlineWarningsAndErrors,
+    setSavedComponentFilters,
   } = require('react-devtools-shared/src/utils');
 
   // Fake timers let us flush Bridge operations between setup and assertions.
   jest.useFakeTimers();
 
   // Use utils.js#withErrorsOrWarningsIgnored instead of directly mutating this array.
-  global._ignoredErrorOrWarningMessages = [];
+  global._ignoredErrorOrWarningMessages = [
+    'react-test-renderer is deprecated.',
+  ];
   function shouldIgnoreConsoleErrorOrWarn(args) {
-    const firstArg = args[0];
-    if (typeof firstArg !== 'string') {
+    let firstArg = args[0];
+    if (
+      firstArg !== null &&
+      typeof firstArg === 'object' &&
+      String(firstArg).indexOf('Error: Uncaught [') === 0
+    ) {
+      firstArg = String(firstArg);
+    } else if (typeof firstArg !== 'string') {
       return false;
     }
     const shouldFilter = global._ignoredErrorOrWarningMessages.some(
@@ -76,7 +153,6 @@ env.beforeEach(() => {
   }
 
   const originalConsoleError = console.error;
-  // $FlowFixMe
   console.error = (...args) => {
     const firstArg = args[0];
     if (
@@ -107,7 +183,6 @@ env.beforeEach(() => {
     originalConsoleError.apply(console, args);
   };
   const originalConsoleWarn = console.warn;
-  // $FlowFixMe
   console.warn = (...args) => {
     if (shouldIgnoreConsoleErrorOrWarn(args)) {
       // Allows testing how DevTools behaves when it encounters console.warn without cluttering the test output.
@@ -118,11 +193,10 @@ env.beforeEach(() => {
   };
 
   // Initialize filters to a known good state.
-  saveComponentFilters(getDefaultComponentFilters());
+  setSavedComponentFilters(getDefaultComponentFilters());
   global.__REACT_DEVTOOLS_COMPONENT_FILTERS__ = getDefaultComponentFilters();
 
   // Also initialize inline warnings so that we can test them.
-  setShowInlineWarningsAndErrors(true);
   global.__REACT_DEVTOOLS_SHOW_INLINE_WARNINGS_AND_ERRORS__ = true;
 
   installHook(global);
@@ -165,7 +239,7 @@ env.beforeEach(() => {
   }
   global.fetch = mockFetch;
 });
-env.afterEach(() => {
+afterEach(() => {
   delete global.__REACT_DEVTOOLS_GLOBAL_HOOK__;
 
   // It's important to reset modules between test runs;
@@ -173,8 +247,4 @@ env.afterEach(() => {
   // It's also important to reset after tests, rather than before,
   // so that we don't disconnect the ReactCurrentDispatcher ref.
   jest.resetModules();
-});
-
-expect.extend({
-  ...require('../../../../scripts/jest/matchers/schedulerTestMatchers'),
 });

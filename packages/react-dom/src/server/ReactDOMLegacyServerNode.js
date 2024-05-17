@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -10,10 +10,6 @@
 import type {ReactNodeList} from 'shared/ReactTypes';
 
 import {version, renderToStringImpl} from './ReactDOMLegacyServerImpl';
-import {
-  renderToNodeStream,
-  renderToStaticNodeStream,
-} from './ReactDOMLegacyServerNodeStream';
 
 type ServerOptions = {
   identifierPrefix?: string,
@@ -43,10 +39,4 @@ function renderToStaticMarkup(
   );
 }
 
-export {
-  renderToString,
-  renderToStaticMarkup,
-  renderToNodeStream,
-  renderToStaticNodeStream,
-  version,
-};
+export {renderToString, renderToStaticMarkup, version};

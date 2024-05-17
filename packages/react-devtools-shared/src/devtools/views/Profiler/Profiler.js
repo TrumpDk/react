@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -34,11 +34,10 @@ import {SettingsModalContextController} from 'react-devtools-shared/src/devtools
 import portaledContent from '../portaledContent';
 import {StoreContext} from '../context';
 import {TimelineContext} from 'react-devtools-timeline/src/TimelineContext';
-import {enableProfilerComponentTree} from 'react-devtools-feature-flags';
 
 import styles from './Profiler.css';
 
-function Profiler(_: {||}) {
+function Profiler(_: {}) {
   const {
     didRecordCommits,
     isProcessingData,
@@ -50,15 +49,12 @@ function Profiler(_: {||}) {
     supportsProfiling,
   } = useContext(ProfilerContext);
 
-  const {file: timelineTraceEventData, searchInputContainerRef} = useContext(
-    TimelineContext,
-  );
+  const {file: timelineTraceEventData, searchInputContainerRef} =
+    useContext(TimelineContext);
 
   const {supportsTimeline} = useContext(StoreContext);
 
   const isLegacyProfilerSelected = selectedTabID !== 'timeline';
-  const isRightColumnVisible =
-    isLegacyProfilerSelected || enableProfilerComponentTree;
 
   let view = null;
   if (didRecordCommits || selectedTabID === 'timeline') {
@@ -152,9 +148,7 @@ function Profiler(_: {||}) {
             <ModalDialog />
           </div>
         </div>
-        {isRightColumnVisible && (
-          <div className={styles.RightColumn}>{sidebar}</div>
-        )}
+        <div className={styles.RightColumn}>{sidebar}</div>
         <SettingsModal />
       </div>
     </SettingsModalContextController>
@@ -196,4 +190,4 @@ const tabsWithTimeline = [
   },
 ];
 
-export default portaledContent(Profiler);
+export default (portaledContent(Profiler): React.ComponentType<{}>);

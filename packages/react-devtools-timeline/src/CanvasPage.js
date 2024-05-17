@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,7 +7,7 @@
  * @flow
  */
 
-import type {Point} from './view-base';
+import type {Interaction, Point} from './view-base';
 import type {
   ReactEventInfo,
   TimelineData,
@@ -69,12 +69,12 @@ import styles from './CanvasPage.css';
 
 const CONTEXT_MENU_ID = 'canvas';
 
-type Props = {|
+type Props = {
   profilerData: TimelineData,
   viewState: ViewState,
-|};
+};
 
-function CanvasPage({profilerData, viewState}: Props) {
+function CanvasPage({profilerData, viewState}: Props): React.Node {
   return (
     <div
       className={styles.CanvasPage}
@@ -145,12 +145,12 @@ const EMPTY_CONTEXT_INFO: ReactEventInfo = {
   userTimingMark: null,
 };
 
-type AutoSizedCanvasProps = {|
+type AutoSizedCanvasProps = {
   data: TimelineData,
   height: number,
   viewState: ViewState,
   width: number,
-|};
+};
 
 function AutoSizedCanvas({
   data,
@@ -199,16 +199,16 @@ function AutoSizedCanvas({
   }, [searchIndex, searchRegExp, searchResults, viewState]);
 
   const surfaceRef = useRef(new Surface(resetHoveredEvent));
-  const userTimingMarksViewRef = useRef(null);
-  const nativeEventsViewRef = useRef(null);
-  const schedulingEventsViewRef = useRef(null);
-  const suspenseEventsViewRef = useRef(null);
-  const componentMeasuresViewRef = useRef(null);
-  const reactMeasuresViewRef = useRef(null);
-  const flamechartViewRef = useRef(null);
-  const networkMeasuresViewRef = useRef(null);
-  const snapshotsViewRef = useRef(null);
-  const thrownErrorsViewRef = useRef(null);
+  const userTimingMarksViewRef = useRef<null | UserTimingMarksView>(null);
+  const nativeEventsViewRef = useRef<null | NativeEventsView>(null);
+  const schedulingEventsViewRef = useRef<null | SchedulingEventsView>(null);
+  const suspenseEventsViewRef = useRef<null | SuspenseEventsView>(null);
+  const componentMeasuresViewRef = useRef<null | ComponentMeasuresView>(null);
+  const reactMeasuresViewRef = useRef<null | ReactMeasuresView>(null);
+  const flamechartViewRef = useRef<null | FlamechartView>(null);
+  const networkMeasuresViewRef = useRef<null | NetworkMeasuresView>(null);
+  const snapshotsViewRef = useRef<null | SnapshotsView>(null);
+  const thrownErrorsViewRef = useRef<null | ThrownErrorsView>(null);
 
   const {hideMenu: hideContextMenu} = useContext(RegistryContext);
 
@@ -484,7 +484,7 @@ function AutoSizedCanvas({
     }
   }, [width, height]);
 
-  const interactor = useCallback(interaction => {
+  const interactor = useCallback((interaction: Interaction) => {
     const canvas = canvasRef.current;
     if (canvas === null) {
       return;
@@ -794,9 +794,9 @@ function AutoSizedCanvas({
                 <ContextMenuItem
                   onClick={() =>
                     copy(
-                      `line ${flamechartStackFrame.locationLine ??
-                        ''}, column ${flamechartStackFrame.locationColumn ??
-                        ''}`,
+                      `line ${
+                        flamechartStackFrame.locationLine ?? ''
+                      }, column ${flamechartStackFrame.locationColumn ?? ''}`,
                     )
                   }
                   title="Copy location">

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -11,12 +11,21 @@ import Agent from 'react-devtools-shared/src/backend/agent';
 import Bridge from 'react-devtools-shared/src/bridge';
 import {installHook} from 'react-devtools-shared/src/hook';
 import {initBackend} from 'react-devtools-shared/src/backend';
+import {installConsoleFunctionsToWindow} from 'react-devtools-shared/src/backend/console';
 import {__DEBUG__} from 'react-devtools-shared/src/constants';
 import setupNativeStyleEditor from 'react-devtools-shared/src/backend/NativeStyleEditor/setupNativeStyleEditor';
 import {getDefaultComponentFilters} from 'react-devtools-shared/src/utils';
+import {
+  initializeUsingCachedSettings,
+  cacheConsolePatchSettings,
+  type DevToolsSettingsManager,
+} from './cachedSettings';
 
 import type {BackendBridge} from 'react-devtools-shared/src/bridge';
-import type {ComponentFilter} from 'react-devtools-shared/src/types';
+import type {
+  ComponentFilter,
+  Wall,
+} from 'react-devtools-shared/src/frontend/types';
 import type {DevToolsHook} from 'react-devtools-shared/src/backend/types';
 import type {ResolveNativeStyle} from 'react-devtools-shared/src/backend/NativeStyleEditor/setupNativeStyleEditor';
 
@@ -29,16 +38,20 @@ type ConnectOptions = {
   retryConnectionDelay?: number,
   isAppActive?: () => boolean,
   websocket?: ?WebSocket,
-  ...
+  devToolsSettingsManager: ?DevToolsSettingsManager,
 };
 
+// Install a global variable to allow patching console early (during injection).
+// This provides React Native developers with components stacks even if they don't run DevTools.
+installConsoleFunctionsToWindow();
 installHook(window);
 
 const hook: ?DevToolsHook = window.__REACT_DEVTOOLS_GLOBAL_HOOK__;
 
-let savedComponentFilters: Array<ComponentFilter> = getDefaultComponentFilters();
+let savedComponentFilters: Array<ComponentFilter> =
+  getDefaultComponentFilters();
 
-function debug(methodName: string, ...args) {
+function debug(methodName: string, ...args: Array<mixed>) {
   if (__DEBUG__) {
     console.log(
       `%c[core/backend] %c${methodName}`,
@@ -60,9 +73,10 @@ export function connectToDevTools(options: ?ConnectOptions) {
     useHttps = false,
     port = 8097,
     websocket,
-    resolveRNStyle = null,
+    resolveRNStyle = (null: $FlowFixMe),
     retryConnectionDelay = 2000,
     isAppActive = () => true,
+    devToolsSettingsManager,
   } = options || {};
 
   const protocol = useHttps ? 'wss' : 'ws';
@@ -75,6 +89,16 @@ export function connectToDevTools(options: ?ConnectOptions) {
         () => connectToDevTools(options),
         retryConnectionDelay,
       );
+    }
+  }
+
+  if (devToolsSettingsManager != null) {
+    try {
+      initializeUsingCachedSettings(devToolsSettingsManager);
+    } catch (e) {
+      // If we call a method on devToolsSettingsManager that throws, or if
+      // is invalid data read out, don't throw and don't interrupt initialization
+      console.error(e);
     }
   }
 
@@ -97,7 +121,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
   ws.onclose = handleClose;
   ws.onerror = handleFailed;
   ws.onmessage = handleMessage;
-  ws.onopen = function() {
+  ws.onopen = function () {
     bridge = new Bridge({
       listen(fn) {
         messageListeners.push(fn);
@@ -132,21 +156,6 @@ export function connectToDevTools(options: ?ConnectOptions) {
       },
     });
     bridge.addListener(
-      'inspectElement',
-      ({id, rendererID}: {id: number, rendererID: number, ...}) => {
-        const renderer = agent.rendererInterfaces[rendererID];
-        if (renderer != null) {
-          // Send event for RN to highlight.
-          const nodes: ?Array<HTMLElement> = renderer.findNativeNodesForFiberID(
-            id,
-          );
-          if (nodes != null && nodes[0] != null) {
-            agent.emit('showNativeHighlight', nodes[0]);
-          }
-        }
-      },
-    );
-    bridge.addListener(
       'updateComponentFilters',
       (componentFilters: Array<ComponentFilter>) => {
         // Save filter changes in memory, in case DevTools is reloaded.
@@ -155,6 +164,15 @@ export function connectToDevTools(options: ?ConnectOptions) {
         savedComponentFilters = componentFilters;
       },
     );
+
+    if (devToolsSettingsManager != null && bridge != null) {
+      bridge.addListener('updateConsolePatchSettings', consolePatchSettings =>
+        cacheConsolePatchSettings(
+          devToolsSettingsManager,
+          consolePatchSettings,
+        ),
+      );
+    }
 
     // The renderer interface doesn't read saved component filters directly,
     // because they are generally stored in localStorage within the context of the extension.
@@ -165,10 +183,12 @@ export function connectToDevTools(options: ?ConnectOptions) {
     // Ideally the backend would save the filters itself, but RN doesn't provide a sync storage solution.
     // So for now we just fall back to using the default filters...
     if (window.__REACT_DEVTOOLS_COMPONENT_FILTERS__ == null) {
+      // $FlowFixMe[incompatible-use] found when upgrading Flow
       bridge.send('overrideComponentFilters', savedComponentFilters);
     }
 
     // TODO (npm-packages) Warn if "isBackendStorageAPISupported"
+    // $FlowFixMe[incompatible-call] found when upgrading Flow
     const agent = new Agent(bridge);
     agent.addListener('shutdown', () => {
       // If we received 'shutdown' from `agent`, we assume the `bridge` is already shutting down,
@@ -181,6 +201,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
     // Setup React Native style editor if the environment supports it.
     if (resolveRNStyle != null || hook.resolveRNStyle != null) {
       setupNativeStyleEditor(
+        // $FlowFixMe[incompatible-call] found when upgrading Flow
         bridge,
         agent,
         ((resolveRNStyle || hook.resolveRNStyle: any): ResolveNativeStyle),
@@ -215,7 +236,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
             get() {
               return lazyResolveRNStyle;
             },
-            set(value) {
+            set(value: $FlowFixMe) {
               lazyResolveRNStyle = value;
               initAfterTick();
             },
@@ -231,7 +252,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
             get() {
               return lazyNativeStyleEditorValidAttributes;
             },
-            set(value) {
+            set(value: $FlowFixMe) {
               lazyNativeStyleEditorValidAttributes = value;
               initAfterTick();
             },
@@ -261,7 +282,7 @@ export function connectToDevTools(options: ?ConnectOptions) {
     scheduleRetry();
   }
 
-  function handleMessage(event) {
+  function handleMessage(event: MessageEvent) {
     let data;
     try {
       if (typeof event.data === 'string') {
@@ -291,4 +312,95 @@ export function connectToDevTools(options: ?ConnectOptions) {
       }
     });
   }
+}
+
+type ConnectWithCustomMessagingOptions = {
+  onSubscribe: (cb: Function) => void,
+  onUnsubscribe: (cb: Function) => void,
+  onMessage: (event: string, payload: any) => void,
+  settingsManager: ?DevToolsSettingsManager,
+  nativeStyleEditorValidAttributes?: $ReadOnlyArray<string>,
+  resolveRNStyle?: ResolveNativeStyle,
+};
+
+export function connectWithCustomMessagingProtocol({
+  onSubscribe,
+  onUnsubscribe,
+  onMessage,
+  settingsManager,
+  nativeStyleEditorValidAttributes,
+  resolveRNStyle,
+}: ConnectWithCustomMessagingOptions): Function {
+  if (hook == null) {
+    // DevTools didn't get injected into this page (maybe b'c of the contentType).
+    return;
+  }
+
+  if (settingsManager != null) {
+    try {
+      initializeUsingCachedSettings(settingsManager);
+    } catch (e) {
+      // If we call a method on devToolsSettingsManager that throws, or if
+      // is invalid data read out, don't throw and don't interrupt initialization
+      console.error(e);
+    }
+  }
+
+  const wall: Wall = {
+    listen(fn: Function) {
+      onSubscribe(fn);
+
+      return () => {
+        onUnsubscribe(fn);
+      };
+    },
+    send(event: string, payload: any) {
+      onMessage(event, payload);
+    },
+  };
+
+  const bridge: BackendBridge = new Bridge(wall);
+
+  bridge.addListener(
+    'updateComponentFilters',
+    (componentFilters: Array<ComponentFilter>) => {
+      // Save filter changes in memory, in case DevTools is reloaded.
+      // In that case, the renderer will already be using the updated values.
+      // We'll lose these in between backend reloads but that can't be helped.
+      savedComponentFilters = componentFilters;
+    },
+  );
+
+  if (settingsManager != null) {
+    bridge.addListener('updateConsolePatchSettings', consolePatchSettings =>
+      cacheConsolePatchSettings(settingsManager, consolePatchSettings),
+    );
+  }
+
+  if (window.__REACT_DEVTOOLS_COMPONENT_FILTERS__ == null) {
+    bridge.send('overrideComponentFilters', savedComponentFilters);
+  }
+
+  const agent = new Agent(bridge);
+  agent.addListener('shutdown', () => {
+    // If we received 'shutdown' from `agent`, we assume the `bridge` is already shutting down,
+    // and that caused the 'shutdown' event on the `agent`, so we don't need to call `bridge.shutdown()` here.
+    hook.emit('shutdown');
+  });
+
+  const unsubscribeBackend = initBackend(hook, agent, window);
+
+  const nativeStyleResolver: ResolveNativeStyle | void =
+    resolveRNStyle || hook.resolveRNStyle;
+
+  if (nativeStyleResolver != null) {
+    const validAttributes =
+      nativeStyleEditorValidAttributes ||
+      hook.nativeStyleEditorValidAttributes ||
+      null;
+
+    setupNativeStyleEditor(bridge, agent, nativeStyleResolver, validAttributes);
+  }
+
+  return unsubscribeBackend;
 }

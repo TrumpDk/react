@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -18,7 +18,6 @@
 'use strict';
 
 var assign = Object.assign;
-var PropTypes = require('prop-types');
 var React = require('react');
 var ReactART = require('react-art');
 
@@ -33,10 +32,6 @@ var Shape = ReactART.Shape;
  */
 var Circle = createReactClass({
   displayName: 'Circle',
-
-  propTypes: {
-    radius: PropTypes.number.isRequired,
-  },
 
   render: function render() {
     var radius = this.props.radius;

@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,12 +7,14 @@
  * @flow
  */
 
-declare var __EXTENSION__: boolean;
-declare var __TEST__: boolean;
+/* eslint-disable no-unused-vars */
 
-declare var DARK_MODE_DIMMED_WARNING_COLOR: string;
-declare var DARK_MODE_DIMMED_ERROR_COLOR: string;
-declare var DARK_MODE_DIMMED_LOG_COLOR: string;
-declare var LIGHT_MODE_DIMMED_WARNING_COLOR: string;
-declare var LIGHT_MODE_DIMMED_ERROR_COLOR: string;
-declare var LIGHT_MODE_DIMMED_LOG_COLOR: string;
+declare const __EXTENSION__: boolean;
+declare const __TEST__: boolean;
+
+declare const DARK_MODE_DIMMED_WARNING_COLOR: string;
+declare const DARK_MODE_DIMMED_ERROR_COLOR: string;
+declare const DARK_MODE_DIMMED_LOG_COLOR: string;
+declare const LIGHT_MODE_DIMMED_WARNING_COLOR: string;
+declare const LIGHT_MODE_DIMMED_ERROR_COLOR: string;
+declare const LIGHT_MODE_DIMMED_LOG_COLOR: string;

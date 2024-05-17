@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -11,22 +11,30 @@
 
 describe('ReactDOMIframe', () => {
   let React;
-  let ReactTestUtils;
+  let ReactDOMClient;
+  let act;
 
   beforeEach(() => {
     React = require('react');
-    ReactTestUtils = require('react-dom/test-utils');
+    ReactDOMClient = require('react-dom/client');
+    act = require('internal-test-utils').act;
   });
 
-  it('should trigger load events', () => {
+  it('should trigger load events', async () => {
     const onLoadSpy = jest.fn();
-    let iframe = React.createElement('iframe', {onLoad: onLoadSpy});
-    iframe = ReactTestUtils.renderIntoDocument(iframe);
+    const container = document.createElement('div');
+    const root = ReactDOMClient.createRoot(container);
+    await act(() => {
+      root.render(React.createElement('iframe', {onLoad: onLoadSpy}));
+    });
+    const iframe = container.firstChild;
 
     const loadEvent = document.createEvent('Event');
     loadEvent.initEvent('load', false, false);
 
-    iframe.dispatchEvent(loadEvent);
+    await act(() => {
+      iframe.dispatchEvent(loadEvent);
+    });
 
     expect(onLoadSpy).toHaveBeenCalled();
   });

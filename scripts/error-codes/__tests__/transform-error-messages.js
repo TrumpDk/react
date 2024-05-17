@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -154,6 +154,14 @@ let val =
   (a,
   // eslint-disable-next-line react-internal/prod-error-codes
   (b, new Error('foo')));
+`)
+    ).toMatchSnapshot();
+  });
+
+  it('should support extra arguments to error constructor', () => {
+    expect(
+      transform(`
+new Error(\`Expected \${foo} target to \` + \`be an array; got \${bar}\`, {cause: error});
 `)
     ).toMatchSnapshot();
   });

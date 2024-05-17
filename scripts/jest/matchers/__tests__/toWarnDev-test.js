@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -415,4 +415,21 @@ describe('toWarnDev', () => {
       }, 'toWarnDev() received more than two arguments.');
     });
   }
+});
+
+describe('toLogDev', () => {
+  it('does not fail if warnings do not include a stack', () => {
+    expect(() => {
+      if (__DEV__) {
+        console.log('Hello');
+      }
+    }).toLogDev('Hello');
+    expect(() => {
+      if (__DEV__) {
+        console.log('Hello');
+        console.log('Good day');
+        console.log('Bye');
+      }
+    }).toLogDev(['Hello', 'Good day', 'Bye']);
+  });
 });

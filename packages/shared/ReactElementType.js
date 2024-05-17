@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -7,23 +7,24 @@
  * @flow
  */
 
-export type Source = {|
-  fileName: string,
-  lineNumber: number,
-|};
+import type {ReactDebugInfo} from './ReactTypes';
 
-export type ReactElement = {|
+interface ConsoleTask {
+  run<T>(f: () => T): T;
+}
+
+export type ReactElement = {
   $$typeof: any,
   type: any,
   key: any,
   ref: any,
   props: any,
-  // ReactFiber
+  // __DEV__ or for string refs
   _owner: any,
 
   // __DEV__
   _store: {validated: boolean, ...},
-  _self: React$Element<any>,
-  _shadowChildren: any,
-  _source: Source,
-|};
+  _debugInfo: null | ReactDebugInfo,
+  _debugStack: Error,
+  _debugTask: null | ConsoleTask,
+};

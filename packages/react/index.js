@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -8,9 +8,6 @@
  */
 
 // Keep in sync with https://github.com/facebook/flow/blob/main/lib/react.js
-export type StatelessFunctionalComponent<
-  P,
-> = React$StatelessFunctionalComponent<P>;
 export type ComponentType<-P> = React$ComponentType<P>;
 export type AbstractComponent<
   -Config,
@@ -32,8 +29,8 @@ export type ChildrenArray<+T> = $ReadOnlyArray<ChildrenArray<T>> | T;
 // Export all exports so that they're available in tests.
 // We can't use export * from in Flow for some reason.
 export {
-  __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED,
-  act as unstable_act,
+  __CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE,
+  act,
   Children,
   Component,
   Fragment,
@@ -41,26 +38,23 @@ export {
   PureComponent,
   StrictMode,
   Suspense,
-  SuspenseList,
   cloneElement,
   createContext,
   createElement,
-  createFactory,
-  createMutableSource,
   createRef,
-  createServerContext,
+  use,
   forwardRef,
   isValidElement,
   lazy,
   memo,
+  cache,
   startTransition,
-  unstable_Cache,
   unstable_DebugTracingMode,
   unstable_LegacyHidden,
-  unstable_Offscreen,
+  unstable_Activity,
   unstable_Scope,
+  unstable_SuspenseList,
   unstable_TracingMarker,
-  unstable_getCacheSignal,
   unstable_getCacheForType,
   unstable_useCacheRefresh,
   useId,
@@ -69,15 +63,17 @@ export {
   useDebugValue,
   useDeferredValue,
   useEffect,
+  experimental_useEffectEvent,
   useImperativeHandle,
   useInsertionEffect,
   useLayoutEffect,
   useMemo,
-  useMutableSource,
+  useOptimistic,
   useSyncExternalStore,
   useReducer,
   useRef,
   useState,
   useTransition,
+  useActionState,
   version,
-} from './src/React';
+} from './src/ReactClient';

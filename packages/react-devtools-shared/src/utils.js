@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -23,9 +23,23 @@ import {
   Suspense,
 } from 'react-is';
 import {
+  REACT_CONSUMER_TYPE,
+  REACT_CONTEXT_TYPE,
+  REACT_FORWARD_REF_TYPE,
+  REACT_FRAGMENT_TYPE,
+  REACT_LAZY_TYPE,
+  REACT_LEGACY_ELEMENT_TYPE,
+  REACT_MEMO_TYPE,
+  REACT_PORTAL_TYPE,
+  REACT_PROFILER_TYPE,
+  REACT_PROVIDER_TYPE,
+  REACT_STRICT_MODE_TYPE,
+  REACT_SUSPENSE_LIST_TYPE,
   REACT_SUSPENSE_LIST_TYPE as SuspenseList,
+  REACT_SUSPENSE_TYPE,
   REACT_TRACING_MARKER_TYPE as TracingMarker,
 } from 'shared/ReactSymbols';
+import {enableRenderableContext} from 'shared/ReactFeatureFlags';
 import {
   TREE_OPERATION_ADD,
   TREE_OPERATION_REMOVE,
@@ -34,29 +48,40 @@ import {
   TREE_OPERATION_SET_SUBTREE_MODE,
   TREE_OPERATION_UPDATE_ERRORS_OR_WARNINGS,
   TREE_OPERATION_UPDATE_TREE_BASE_DURATION,
-} from './constants';
-import {ElementTypeRoot} from 'react-devtools-shared/src/types';
-import {
-  LOCAL_STORAGE_FILTER_PREFERENCES_KEY,
+  LOCAL_STORAGE_COMPONENT_FILTER_PREFERENCES_KEY,
   LOCAL_STORAGE_OPEN_IN_EDITOR_URL,
   LOCAL_STORAGE_SHOULD_BREAK_ON_CONSOLE_ERRORS,
-  LOCAL_STORAGE_SHOULD_PATCH_CONSOLE_KEY,
+  LOCAL_STORAGE_SHOULD_APPEND_COMPONENT_STACK_KEY,
   LOCAL_STORAGE_SHOW_INLINE_WARNINGS_AND_ERRORS_KEY,
   LOCAL_STORAGE_HIDE_CONSOLE_LOGS_IN_STRICT_MODE,
 } from './constants';
-import {ComponentFilterElementType, ElementTypeHostComponent} from './types';
 import {
+  ComponentFilterElementType,
+  ComponentFilterLocation,
+  ElementTypeHostComponent,
+} from './frontend/types';
+import {
+  ElementTypeRoot,
   ElementTypeClass,
   ElementTypeForwardRef,
   ElementTypeFunction,
   ElementTypeMemo,
-} from 'react-devtools-shared/src/types';
+} from 'react-devtools-shared/src/frontend/types';
 import {localStorageGetItem, localStorageSetItem} from './storage';
 import {meta} from './hydration';
 import isArray from './isArray';
 
-import type {ComponentFilter, ElementType} from './types';
-import type {LRUCache} from 'react-devtools-shared/src/types';
+import type {
+  ComponentFilter,
+  ElementType,
+  BrowserTheme,
+  SerializedElement as SerializedElementFrontend,
+  LRUCache,
+} from 'react-devtools-shared/src/frontend/types';
+import type {SerializedElement as SerializedElementBackend} from 'react-devtools-shared/src/backend/types';
+
+// $FlowFixMe[method-unbinding]
+const hasOwnProperty = Object.prototype.hasOwnProperty;
 
 const cachedDisplayNames: WeakMap<Function, string> = new WeakMap();
 
@@ -67,8 +92,8 @@ const encodedStringCache: LRUCache<string, Array<number>> = new LRU({
 });
 
 export function alphaSortKeys(
-  a: string | number | Symbol,
-  b: string | number | Symbol,
+  a: string | number | symbol,
+  b: string | number | symbol,
 ): number {
   if (a.toString() > b.toString()) {
     return 1;
@@ -81,8 +106,8 @@ export function alphaSortKeys(
 
 export function getAllEnumerableKeys(
   obj: Object,
-): Set<string | number | Symbol> {
-  const keys = new Set();
+): Set<string | number | symbol> {
+  const keys = new Set<string | number | symbol>();
   let current = obj;
   while (current != null) {
     const currentKeys = [
@@ -91,7 +116,7 @@ export function getAllEnumerableKeys(
     ];
     const descriptors = Object.getOwnPropertyDescriptors(current);
     currentKeys.forEach(key => {
-      // $FlowFixMe: key can be a Symbol https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyDescriptor
+      // $FlowFixMe[incompatible-type]: key can be a Symbol https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Object/getOwnPropertyDescriptor
       if (descriptors[key].enumerable) {
         keys.add(key);
       }
@@ -108,9 +133,9 @@ export function getWrappedDisplayName(
   wrapperName: string,
   fallbackName?: string,
 ): string {
+  const displayName = (outerType: any)?.displayName;
   return (
-    (outerType: any).displayName ||
-    `${wrapperName}(${getDisplayName(innerType, fallbackName)})`
+    displayName || `${wrapperName}(${getDisplayName(innerType, fallbackName)})`
   );
 }
 
@@ -144,15 +169,14 @@ export function getUID(): number {
   return ++uidCounter;
 }
 
-export function utfDecodeString(array: Array<number>): string {
-  // Avoid spreading the array (e.g. String.fromCodePoint(...array))
-  // Functions arguments are first placed on the stack before the function is called
-  // which throws a RangeError for large arrays.
-  // See github.com/facebook/react/issues/22293
+export function utfDecodeStringWithRanges(
+  array: Array<number>,
+  left: number,
+  right: number,
+): string {
   let string = '';
-  for (let i = 0; i < array.length; i++) {
-    const char = array[i];
-    string += String.fromCodePoint(char);
+  for (let i = left; i <= right; i++) {
+    string += String.fromCodePoint(array[i]);
   }
   return string;
 }
@@ -201,15 +225,17 @@ export function printOperationsArray(operations: Array<number>) {
   let i = 2;
 
   // Reassemble the string table.
-  const stringTable = [
+  const stringTable: Array<null | string> = [
     null, // ID = 0 corresponds to the null string.
   ];
   const stringTableSize = operations[i++];
   const stringTableEnd = i + stringTableSize;
   while (i < stringTableEnd) {
     const nextLength = operations[i++];
-    const nextString = utfDecodeString(
-      (operations.slice(i, i + nextLength): any),
+    const nextString = utfDecodeStringWithRanges(
+      operations,
+      i,
+      i + nextLength - 1,
     );
     stringTable.push(nextString);
     i += nextLength;
@@ -324,95 +350,88 @@ export function getDefaultComponentFilters(): Array<ComponentFilter> {
 
 export function getSavedComponentFilters(): Array<ComponentFilter> {
   try {
-    const raw = localStorageGetItem(LOCAL_STORAGE_FILTER_PREFERENCES_KEY);
+    const raw = localStorageGetItem(
+      LOCAL_STORAGE_COMPONENT_FILTER_PREFERENCES_KEY,
+    );
     if (raw != null) {
-      return JSON.parse(raw);
+      const parsedFilters: Array<ComponentFilter> = JSON.parse(raw);
+      return filterOutLocationComponentFilters(parsedFilters);
     }
   } catch (error) {}
   return getDefaultComponentFilters();
 }
 
-export function saveComponentFilters(
+export function setSavedComponentFilters(
   componentFilters: Array<ComponentFilter>,
 ): void {
   localStorageSetItem(
-    LOCAL_STORAGE_FILTER_PREFERENCES_KEY,
-    JSON.stringify(componentFilters),
+    LOCAL_STORAGE_COMPONENT_FILTER_PREFERENCES_KEY,
+    JSON.stringify(filterOutLocationComponentFilters(componentFilters)),
   );
+}
+
+// Following __debugSource removal from Fiber, the new approach for finding the source location
+// of a component, represented by the Fiber, is based on lazily generating and parsing component stack frames
+// To find the original location, React DevTools will perform symbolication, source maps are required for that.
+// In order to start filtering Fibers, we need to find location for all of them, which can't be done lazily.
+// Eager symbolication can become quite expensive for large applications.
+export function filterOutLocationComponentFilters(
+  componentFilters: Array<ComponentFilter>,
+): Array<ComponentFilter> {
+  // This is just an additional check to preserve the previous state
+  // Filters can be stored on the backend side or in user land (in a window object)
+  if (!Array.isArray(componentFilters)) {
+    return componentFilters;
+  }
+
+  return componentFilters.filter(f => f.type !== ComponentFilterLocation);
+}
+
+function parseBool(s: ?string): ?boolean {
+  if (s === 'true') {
+    return true;
+  }
+  if (s === 'false') {
+    return false;
+  }
+}
+
+export function castBool(v: any): ?boolean {
+  if (v === true || v === false) {
+    return v;
+  }
+}
+
+export function castBrowserTheme(v: any): ?BrowserTheme {
+  if (v === 'light' || v === 'dark' || v === 'auto') {
+    return v;
+  }
 }
 
 export function getAppendComponentStack(): boolean {
-  try {
-    const raw = localStorageGetItem(LOCAL_STORAGE_SHOULD_PATCH_CONSOLE_KEY);
-    if (raw != null) {
-      return JSON.parse(raw);
-    }
-  } catch (error) {}
-  return true;
-}
-
-export function setAppendComponentStack(value: boolean): void {
-  localStorageSetItem(
-    LOCAL_STORAGE_SHOULD_PATCH_CONSOLE_KEY,
-    JSON.stringify(value),
+  const raw = localStorageGetItem(
+    LOCAL_STORAGE_SHOULD_APPEND_COMPONENT_STACK_KEY,
   );
+  return parseBool(raw) ?? true;
 }
 
 export function getBreakOnConsoleErrors(): boolean {
-  try {
-    const raw = localStorageGetItem(
-      LOCAL_STORAGE_SHOULD_BREAK_ON_CONSOLE_ERRORS,
-    );
-    if (raw != null) {
-      return JSON.parse(raw);
-    }
-  } catch (error) {}
-  return false;
-}
-
-export function setBreakOnConsoleErrors(value: boolean): void {
-  localStorageSetItem(
-    LOCAL_STORAGE_SHOULD_BREAK_ON_CONSOLE_ERRORS,
-    JSON.stringify(value),
-  );
+  const raw = localStorageGetItem(LOCAL_STORAGE_SHOULD_BREAK_ON_CONSOLE_ERRORS);
+  return parseBool(raw) ?? false;
 }
 
 export function getHideConsoleLogsInStrictMode(): boolean {
-  try {
-    const raw = localStorageGetItem(
-      LOCAL_STORAGE_HIDE_CONSOLE_LOGS_IN_STRICT_MODE,
-    );
-    if (raw != null) {
-      return JSON.parse(raw);
-    }
-  } catch (error) {}
-  return false;
-}
-
-export function sethideConsoleLogsInStrictMode(value: boolean): void {
-  localStorageSetItem(
+  const raw = localStorageGetItem(
     LOCAL_STORAGE_HIDE_CONSOLE_LOGS_IN_STRICT_MODE,
-    JSON.stringify(value),
   );
+  return parseBool(raw) ?? false;
 }
 
 export function getShowInlineWarningsAndErrors(): boolean {
-  try {
-    const raw = localStorageGetItem(
-      LOCAL_STORAGE_SHOW_INLINE_WARNINGS_AND_ERRORS_KEY,
-    );
-    if (raw != null) {
-      return JSON.parse(raw);
-    }
-  } catch (error) {}
-  return true;
-}
-
-export function setShowInlineWarningsAndErrors(value: boolean): void {
-  localStorageSetItem(
+  const raw = localStorageGetItem(
     LOCAL_STORAGE_SHOW_INLINE_WARNINGS_AND_ERRORS_KEY,
-    JSON.stringify(value),
   );
+  return parseBool(raw) ?? true;
 }
 
 export function getDefaultOpenInEditorURL(): string {
@@ -431,16 +450,35 @@ export function getOpenInEditorURL(): string {
   return getDefaultOpenInEditorURL();
 }
 
-export function separateDisplayNameAndHOCs(
+type ParseElementDisplayNameFromBackendReturn = {
+  formattedDisplayName: string | null,
+  hocDisplayNames: Array<string> | null,
+  compiledWithForget: boolean,
+};
+export function parseElementDisplayNameFromBackend(
   displayName: string | null,
   type: ElementType,
-): [string | null, Array<string> | null] {
+): ParseElementDisplayNameFromBackendReturn {
   if (displayName === null) {
-    return [null, null];
+    return {
+      formattedDisplayName: null,
+      hocDisplayNames: null,
+      compiledWithForget: false,
+    };
+  }
+
+  if (displayName.startsWith('Forget(')) {
+    const displayNameWithoutForgetWrapper = displayName.slice(
+      7,
+      displayName.length - 1,
+    );
+
+    const {formattedDisplayName, hocDisplayNames} =
+      parseElementDisplayNameFromBackend(displayNameWithoutForgetWrapper, type);
+    return {formattedDisplayName, hocDisplayNames, compiledWithForget: true};
   }
 
   let hocDisplayNames = null;
-
   switch (type) {
     case ElementTypeClass:
     case ElementTypeForwardRef:
@@ -458,7 +496,11 @@ export function separateDisplayNameAndHOCs(
       break;
   }
 
-  return [displayName, hocDisplayNames];
+  return {
+    formattedDisplayName: displayName,
+    hocDisplayNames,
+    compiledWithForget: false,
+  };
 }
 
 // Pulled from react-compat
@@ -557,6 +599,7 @@ export type DataType =
   | 'array_buffer'
   | 'bigint'
   | 'boolean'
+  | 'class_instance'
   | 'data_view'
   | 'date'
   | 'function'
@@ -635,6 +678,7 @@ export function getDataType(data: Object): DataType {
       } else if (data.constructor && data.constructor.name === 'RegExp') {
         return 'regexp';
       } else {
+        // $FlowFixMe[method-unbinding]
         const toStringValue = Object.prototype.toString.call(data);
         if (toStringValue === '[object Date]') {
           return 'date';
@@ -642,6 +686,11 @@ export function getDataType(data: Object): DataType {
           return 'html_all_collection';
         }
       }
+
+      if (!isPlainObject(data)) {
+        return 'class_instance';
+      }
+
       return 'object';
     case 'string':
       return 'string';
@@ -649,6 +698,7 @@ export function getDataType(data: Object): DataType {
       return 'symbol';
     case 'undefined':
       if (
+        // $FlowFixMe[method-unbinding]
         Object.prototype.toString.call(data) === '[object HTMLAllCollection]'
       ) {
         return 'html_all_collection';
@@ -659,10 +709,57 @@ export function getDataType(data: Object): DataType {
   }
 }
 
+// Fork of packages/react-is/src/ReactIs.js:30, but with legacy element type
+// Which has been changed in https://github.com/facebook/react/pull/28813
+function typeOfWithLegacyElementSymbol(object: any): mixed {
+  if (typeof object === 'object' && object !== null) {
+    const $$typeof = object.$$typeof;
+    switch ($$typeof) {
+      case REACT_LEGACY_ELEMENT_TYPE:
+        const type = object.type;
+
+        switch (type) {
+          case REACT_FRAGMENT_TYPE:
+          case REACT_PROFILER_TYPE:
+          case REACT_STRICT_MODE_TYPE:
+          case REACT_SUSPENSE_TYPE:
+          case REACT_SUSPENSE_LIST_TYPE:
+            return type;
+          default:
+            const $$typeofType = type && type.$$typeof;
+
+            switch ($$typeofType) {
+              case REACT_CONTEXT_TYPE:
+              case REACT_FORWARD_REF_TYPE:
+              case REACT_LAZY_TYPE:
+              case REACT_MEMO_TYPE:
+                return $$typeofType;
+              case REACT_CONSUMER_TYPE:
+                if (enableRenderableContext) {
+                  return $$typeofType;
+                }
+              // Fall through
+              case REACT_PROVIDER_TYPE:
+                if (!enableRenderableContext) {
+                  return $$typeofType;
+                }
+              // Fall through
+              default:
+                return $$typeof;
+            }
+        }
+      case REACT_PORTAL_TYPE:
+        return $$typeof;
+    }
+  }
+
+  return undefined;
+}
+
 export function getDisplayNameForReactElement(
   element: React$Element<any>,
 ): string | null {
-  const elementType = typeOf(element);
+  const elementType = typeOf(element) || typeOfWithLegacyElementSymbol(element);
   switch (elementType) {
     case ContextConsumer:
       return 'ContextConsumer';
@@ -709,7 +806,7 @@ function truncateForDisplay(
   length: number = MAX_PREVIEW_STRING_LENGTH,
 ) {
   if (string.length > length) {
-    return string.substr(0, length) + '…';
+    return string.slice(0, length) + '…';
   } else {
     return string;
   }
@@ -856,6 +953,8 @@ export function formatDataForPreview(
     }
     case 'date':
       return data.toString();
+    case 'class_instance':
+      return data.constructor.name;
     case 'object':
       if (showFormattedValue) {
         const keys = Array.from(getAllEnumerableKeys(data)).sort(alphaSortKeys);
@@ -893,4 +992,32 @@ export function formatDataForPreview(
         return 'unserializable';
       }
   }
+}
+
+// Basically checking that the object only has Object in its prototype chain
+export const isPlainObject = (object: Object): boolean => {
+  const objectPrototype = Object.getPrototypeOf(object);
+  if (!objectPrototype) return true;
+
+  const objectParentPrototype = Object.getPrototypeOf(objectPrototype);
+  return !objectParentPrototype;
+};
+
+export function backendToFrontendSerializedElementMapper(
+  element: SerializedElementBackend,
+): SerializedElementFrontend {
+  const {formattedDisplayName, hocDisplayNames, compiledWithForget} =
+    parseElementDisplayNameFromBackend(element.displayName, element.type);
+
+  return {
+    ...element,
+    displayName: formattedDisplayName,
+    hocDisplayNames,
+    compiledWithForget,
+  };
+}
+
+// This is a hacky one to just support this exact case.
+export function normalizeUrl(url: string): string {
+  return url.replace('/./', '/');
 }

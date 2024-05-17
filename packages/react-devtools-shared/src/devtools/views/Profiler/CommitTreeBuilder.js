@@ -1,5 +1,5 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
@@ -17,18 +17,21 @@ import {
   TREE_OPERATION_UPDATE_TREE_BASE_DURATION,
   TREE_OPERATION_UPDATE_ERRORS_OR_WARNINGS,
 } from 'react-devtools-shared/src/constants';
-import {utfDecodeString} from 'react-devtools-shared/src/utils';
-import {ElementTypeRoot} from 'react-devtools-shared/src/types';
+import {
+  parseElementDisplayNameFromBackend,
+  utfDecodeStringWithRanges,
+} from 'react-devtools-shared/src/utils';
+import {ElementTypeRoot} from 'react-devtools-shared/src/frontend/types';
 import ProfilerStore from 'react-devtools-shared/src/devtools/ProfilerStore';
 
-import type {ElementType} from 'react-devtools-shared/src/types';
+import type {ElementType} from 'react-devtools-shared/src/frontend/types';
 import type {
   CommitTree,
   CommitTreeNode,
   ProfilingDataForRootFrontend,
 } from 'react-devtools-shared/src/devtools/views/Profiler/types';
 
-const debug = (methodName, ...args) => {
+const debug = (methodName: string, ...args: Array<string>) => {
   if (__DEBUG__) {
     console.log(
       `%cCommitTreeBuilder %c${methodName}`,
@@ -45,11 +48,11 @@ export function getCommitTree({
   commitIndex,
   profilerStore,
   rootID,
-}: {|
+}: {
   commitIndex: number,
   profilerStore: ProfilerStore,
   rootID: number,
-|}): CommitTree {
+}): CommitTree {
   if (!rootToCommitTreeMap.has(rootID)) {
     rootToCommitTreeMap.set(rootID, []);
   }
@@ -84,7 +87,7 @@ export function getCommitTree({
     // If this is the very first commit, start with the cached snapshot and apply the first mutation.
     // Otherwise load (or generate) the previous commit and append a mutation to it.
     if (index === 0) {
-      const nodes = new Map();
+      const nodes = new Map<number, CommitTreeNode>();
 
       // Construct the initial tree.
       recursivelyInitializeTree(rootID, 0, nodes, dataForRoot);
@@ -133,6 +136,7 @@ function recursivelyInitializeTree(
         id,
       ): any): number),
       type: node.type,
+      compiledWithForget: node.compiledWithForget,
     });
 
     node.children.forEach(childID =>
@@ -150,6 +154,7 @@ function updateTree(
 
   // Clone nodes before mutating them so edits don't affect them.
   const getClonedNode = (id: number): CommitTreeNode => {
+    // $FlowFixMe[prop-missing] - recommended fix is to use object spread operator
     const clonedNode = ((Object.assign(
       {},
       nodes.get(id),
@@ -162,15 +167,17 @@ function updateTree(
   let id: number = ((null: any): number);
 
   // Reassemble the string table.
-  const stringTable = [
+  const stringTable: Array<null | string> = [
     null, // ID = 0 corresponds to the null string.
   ];
   const stringTableSize = operations[i++];
   const stringTableEnd = i + stringTableSize;
   while (i < stringTableEnd) {
     const nextLength = operations[i++];
-    const nextString = utfDecodeString(
-      (operations.slice(i, i + nextLength): any),
+    const nextString = utfDecodeStringWithRanges(
+      operations,
+      i,
+      i + nextLength - 1,
     );
     stringTable.push(nextString);
     i += nextLength;
@@ -211,6 +218,7 @@ function updateTree(
             parentID: 0,
             treeBaseDuration: 0, // This will be updated by a subsequent operation
             type,
+            compiledWithForget: false,
           };
 
           nodes.set(id, node);
@@ -238,15 +246,19 @@ function updateTree(
           const parentNode = getClonedNode(parentID);
           parentNode.children = parentNode.children.concat(id);
 
+          const {formattedDisplayName, hocDisplayNames, compiledWithForget} =
+            parseElementDisplayNameFromBackend(displayName, type);
+
           const node: CommitTreeNode = {
             children: [],
-            displayName,
-            hocDisplayNames: null,
+            displayName: formattedDisplayName,
+            hocDisplayNames: hocDisplayNames,
             id,
             key,
             parentID,
             treeBaseDuration: 0, // This will be updated by a subsequent operation
             type,
+            compiledWithForget,
           };
 
           nodes.set(id, node);

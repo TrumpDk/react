@@ -1,52 +1,96 @@
 /**
- * Copyright (c) Facebook, Inc. and its affiliates.
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
  *
  * @flow
  */
+import type {BatchConfigTransition} from 'react-reconciler/src/ReactFiberTracingMarkerComponent';
 import type {StartTransitionOptions} from 'shared/ReactTypes';
 
-import ReactCurrentBatchConfig from './ReactCurrentBatchConfig';
-import {enableTransitionTracing} from 'shared/ReactFeatureFlags';
+import ReactSharedInternals from 'shared/ReactSharedInternals';
+
+import {
+  enableAsyncActions,
+  enableTransitionTracing,
+} from 'shared/ReactFeatureFlags';
+
+import reportGlobalError from 'shared/reportGlobalError';
 
 export function startTransition(
   scope: () => void,
   options?: StartTransitionOptions,
 ) {
-  const prevTransition = ReactCurrentBatchConfig.transition;
-  ReactCurrentBatchConfig.transition = {};
-  const currentTransition = ReactCurrentBatchConfig.transition;
+  const prevTransition = ReactSharedInternals.T;
+  // Each renderer registers a callback to receive the return value of
+  // the scope function. This is used to implement async actions.
+  const callbacks = new Set<(BatchConfigTransition, mixed) => mixed>();
+  const transition: BatchConfigTransition = {
+    _callbacks: callbacks,
+  };
+  ReactSharedInternals.T = transition;
+  const currentTransition = ReactSharedInternals.T;
 
   if (__DEV__) {
-    ReactCurrentBatchConfig.transition._updatedFibers = new Set();
+    ReactSharedInternals.T._updatedFibers = new Set();
   }
 
   if (enableTransitionTracing) {
     if (options !== undefined && options.name !== undefined) {
-      ReactCurrentBatchConfig.transition.name = options.name;
-      ReactCurrentBatchConfig.transition.startTime = -1;
+      // $FlowFixMe[incompatible-use] found when upgrading Flow
+      ReactSharedInternals.T.name = options.name;
+      // $FlowFixMe[incompatible-use] found when upgrading Flow
+      ReactSharedInternals.T.startTime = -1;
     }
   }
 
-  try {
-    scope();
-  } finally {
-    ReactCurrentBatchConfig.transition = prevTransition;
+  if (enableAsyncActions) {
+    try {
+      const returnValue = scope();
+      if (
+        typeof returnValue === 'object' &&
+        returnValue !== null &&
+        typeof returnValue.then === 'function'
+      ) {
+        callbacks.forEach(callback => callback(currentTransition, returnValue));
+        returnValue.then(noop, reportGlobalError);
+      }
+    } catch (error) {
+      reportGlobalError(error);
+    } finally {
+      warnAboutTransitionSubscriptions(prevTransition, currentTransition);
+      ReactSharedInternals.T = prevTransition;
+    }
+  } else {
+    // When async actions are not enabled, startTransition does not
+    // capture errors.
+    try {
+      scope();
+    } finally {
+      warnAboutTransitionSubscriptions(prevTransition, currentTransition);
+      ReactSharedInternals.T = prevTransition;
+    }
+  }
+}
 
-    if (__DEV__) {
-      if (prevTransition === null && currentTransition._updatedFibers) {
-        const updatedFibersCount = currentTransition._updatedFibers.size;
-        if (updatedFibersCount > 10) {
-          console.warn(
-            'Detected a large number of updates inside startTransition. ' +
-              'If this is due to a subscription please re-write it to use React provided hooks. ' +
-              'Otherwise concurrent mode guarantees are off the table.',
-          );
-        }
-        currentTransition._updatedFibers.clear();
+function warnAboutTransitionSubscriptions(
+  prevTransition: BatchConfigTransition | null,
+  currentTransition: BatchConfigTransition,
+) {
+  if (__DEV__) {
+    if (prevTransition === null && currentTransition._updatedFibers) {
+      const updatedFibersCount = currentTransition._updatedFibers.size;
+      currentTransition._updatedFibers.clear();
+      if (updatedFibersCount > 10) {
+        console.warn(
+          'Detected a large number of updates inside startTransition. ' +
+            'If this is due to a subscription please re-write it to use React provided hooks. ' +
+            'Otherwise concurrent mode guarantees are off the table.',
+        );
       }
     }
   }
 }
+
+function noop() {}
